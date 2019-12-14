@@ -1,0 +1,190 @@
+/dts-v1/;
+/include/ "zynq-7000.dtsi"
+
+/ {
+	model = "GVI-Tech CRZ01 Board";
+	compatible = "xlnx,zynq-crz01", "xlnx,zynq-7000";
+
+	aliases {
+		serial0 = &uart1;
+		spi0 = &qspi;
+		mmc0 = &sdhci0;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0x40000000>;
+	};
+
+	chosen {
+		bootargs = "earlyprintk";
+		stdout-path = "serial0:115200n8";
+	};
+
+	usb_phy0: phy0 {
+		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
+	};
+};
+
+&amba {
+    /* empty defintion for kernels that don't have qspi node */
+    qspi: spi@e000d000 { };
+};
+
+&clkc {
+	ps-clk-frequency = <33333333>;
+};
+
+&qspi {
+	status = "okay";
+	is-dual = <1>;
+	flash@0 {
+		compatible = "spansion,s25fl256s", "jedec,spi-nor";
+		reg = <0x0>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <50000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@qspi-fsbl-uboot {
+			label = "qspi-fsbl-uboot";
+			reg = <0x00000000 0x00500000>;
+		};
+		partition@qspi-linux {
+			label = "qspi-linux";
+			reg = <0x00500000 0x00020000>;
+		};
+		partition@qspi-device-tree {
+			label = "qspi-device-tree";
+			reg = <0x00520000 0x00020000>;
+		};
+		partition@qspi-rootfs {
+			label = "qspi-rootfs";
+			reg = <0x00540000 0x038C0000>;
+		};
+		partition@qspi-bitstream {
+			label = "qspi-bitstream";
+			reg = <0x03E00000 0x00200000>;
+		};
+	};
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&gem0 {
+	status = "okay";
+	phy-mode = "rgmii-id";
+	phy-handle = <&ethernet_phy>;
+
+	ethernet_phy: ethernet-phy@0 {
+		reg = <0>;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <400000>;
+
+		i2c-mux@70 {
+		compatible = "nxp,pca9548";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x70>;
+
+		i2c@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0>;
+			rtc1: ds1337@68 {
+				compatible = "dallas,ds1337";
+				reg = <0x68>;
+				//FIXME: fill this in
+				//interrupt-parent = <&gpio4>;
+				//interrupts = <20 0>;
+				//trickle-resistor-ohms = <250>;
+			};
+		};
+
+		i2c@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
+
+			//FIXME: add this to overlay?
+			//adv7511: hdmi-tx@39 {
+			//	compatible = "adi,adv7511";
+			//	reg = <0x39>;
+			//	adi,input-depth = <8>;
+			//	adi,input-colorspace = "yuv422";
+			//	adi,input-clock = "1x";
+			//	adi,input-style = <3>;
+			//	adi,input-justification = "right";
+			//};
+		};
+
+		i2c@2 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <2>;
+
+			eeprom: eeprom@50 {
+				compatible = "atmel,24c08";
+				reg = <0x53>;
+			};
+		};
+
+		i2c@3 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <3>;
+
+			//Ext I2C
+		};
+
+		i2c@4 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <4>;
+
+			//SFP0
+		};
+
+		i2c@5 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <5>;
+
+			//Ext I2C 3V3
+		};
+
+		i2c@6 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <4>;
+
+			//SFP1
+		};
+
+		i2c@7 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <7>;
+
+			//QSFP
+		};
+	};
+};
+
+&sdhci0 {
+	status = "okay";
+};
+
+&usb0 {
+	status = "okay";
+	dr_mode = "host";
+	usb-phy = <&usb_phy0>;
+};

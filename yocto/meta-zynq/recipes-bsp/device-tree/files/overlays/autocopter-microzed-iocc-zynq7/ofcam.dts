@@ -1,0 +1,127 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "xlnx,zynq-7000";
+
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            ofcam_clk: ofcam_clock@0 {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <26600000>;
+            };
+
+            ofcam_peripherals_clk: ofcam_clock@1 {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <100000000>;
+            };
+        };
+    };
+
+    fragment@1 {
+        target = <&amba>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            ofcam_iic: i2c@41000000 {
+                compatible = "xlnx,xps-iic-2.00.a";
+                clocks = <&ofcam_peripherals_clk>;
+                interrupt-parent = <&intc>;
+                interrupts = < 0 29 4 >;
+                reg = < 0x41000000 0x10000 >;
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                ofcam_gpio: gpio@41 {
+                    compatible = "nxp,pca9538";
+                    reg = <0x71>;
+                    gpio-controller;
+                    #gpio-cells = <2>;
+                };
+
+                mt9v034m: ofcam@48 {
+                    compatible = "mt9v034m";
+                    reg = <0x48>;
+                    clocks = <&ofcam_clk>;
+
+                    reset-gpios   = < &ofcam_gpio 2 1 /*GPIO_ACTIVE_LOW */ >;
+                    standby-gpios = < &ofcam_gpio 3 0 /*GPIO_ACTIVE_HIGH*/ >;
+
+                    adr0-gpios   = < &ofcam_gpio 0 0 /*GPIO_ACTIVE_HIGH*/ >;
+                    adr1-gpios   = < &ofcam_gpio 1 0 /*GPIO_ACTIVE_HIGH*/ >;
+                    douten-gpios = < &ofcam_gpio 4 0 /*GPIO_ACTIVE_HIGH*/ >;
+
+                    /* Enable LVDS output instead of parallel output (this is a non-mainline patch) */
+                    lvds-mode;
+
+                    /* Enable embedded syncs */
+                    embedded-syncs;
+
+                    ports {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        port@0 {
+                            reg = <0>;
+                            mt9v034m_out: endpoint {
+                                remote-endpoint = <&ofcam_vcap_in>;
+                            };
+                        };
+                    };
+                };
+            };
+
+            ofcam_axi_vdma: dma@41010000 {
+                #dma-cells = <1>;
+
+                compatible = "xlnx,axi-vdma-1.00.a";
+
+                interrupt-parent = <&intc>;
+                interrupts = <0 30 4>;
+
+                reg = <0x41010000 0x10000>;
+                dma-ranges = <0x00000000 0x00000000 0x40000000>;
+
+                xlnx,addrwidth = <32>;
+                xlnx,flush-fsync = <0x1>;
+                /* FIXME: Figure out why this doesn't work with more than one framestores */
+                /* https://forums.xilinx.com/xlnx/board/crawl_message?board.id=ELINUX&message.id=13118 */
+                xlnx,num-fstores = <0x1>;
+
+                clocks = <&ofcam_peripherals_clk>;
+                clock-names = "s_axi_lite_aclk";
+
+                dma-channel@41010030 {
+                    compatible = "xlnx,axi-vdma-s2mm-channel";
+                    interrupts = <0 31 4>;
+                    xlnx,datawidth = <0x20>;
+                    xlnx,device-id = <0x0>;
+                    /*xlnx,genlock-mode ;*/
+                };
+            };
+
+            ofcam_video_cap {
+                compatible = "xlnx,video";
+                dmas = <&ofcam_axi_vdma 0>;
+                dma-names = "port0";
+
+                ports {
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+
+                    port@0 {
+                        reg = <0>;
+                        direction = "input";
+                        ofcam_vcap_in: endpoint {
+                            remote-endpoint = <&mt9v034m_out>;
+                        };
+                    };
+                };
+            };
+        };
+    };
+};

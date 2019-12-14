@@ -1,0 +1,55 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "avnet,picozed";
+
+    /* IMU on FMC card */
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            status = "okay";
+
+            /* MPU-9250 max 20MHz */
+            spidev@0{
+                compatible = "autocopter,mpu9250";
+                reg = <0>; /* chipselect 0 */
+                spi-max-frequency= <20000000>;
+            };
+
+            /* MS5611 max 10MHz */
+            spidev@1{
+                compatible = "autocopter,ms5611";
+                reg = <1>; /* chipselect 1 */
+                spi-max-frequency= <10000000>;
+            };
+        };
+    };
+
+    /* SPI Interface on FMC card */
+    fragment@1 {
+        target = <&spi1>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    /* SERIAL2 on FMC card */
+    fragment@2 {
+        target = <&uart0>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    /* I2C interface on FMC card */
+    fragment@3 {
+        target = <&i2c0>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+};

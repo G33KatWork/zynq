@@ -1,0 +1,101 @@
+set_property PACKAGE_PIN H6 [get_ports HDMIO_IIC_scl_io]
+set_property PACKAGE_PIN H5 [get_ports HDMIO_IIC_sda_io]
+set_property IOSTANDARD LVCMOS18 [get_ports HDMIO_IIC_scl_io]
+set_property IOSTANDARD LVCMOS18 [get_ports HDMIO_IIC_sda_io]
+
+set_property PACKAGE_PIN B3 [get_ports COPTER_SERIAL2_tx]
+set_property PACKAGE_PIN B2 [get_ports COPTER_SERIAL2_rx]
+set_property PACKAGE_PIN F6 [get_ports COPTER_SERIAL2_cts]
+set_property PACKAGE_PIN B1 [get_ports COPTER_SERIAL2_rts]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SERIAL2_cts]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SERIAL2_rts]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SERIAL2_rx]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SERIAL2_tx]
+
+set_property PACKAGE_PIN C3 [get_ports COPTER_CAN_rx]
+set_property PACKAGE_PIN H1 [get_ports COPTER_CAN_tx]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_CAN_rx]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_CAN_tx]
+
+set_property PACKAGE_PIN E7 [get_ports COPTER_I2C_scl_io]
+set_property PACKAGE_PIN D7 [get_ports COPTER_I2C_sda_io]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_I2C_scl_io]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_I2C_sda_io]
+
+set_property PACKAGE_PIN D2 [get_ports COPTER_SPI_IMU_cs_mpu]
+set_property PACKAGE_PIN E8 [get_ports COPTER_SPI_IMU_cs_ms5611]
+set_property PACKAGE_PIN E2 [get_ports COPTER_SPI_IMU_miso]
+set_property PACKAGE_PIN G1 [get_ports COPTER_SPI_IMU_mosi]
+set_property PACKAGE_PIN D8 [get_ports COPTER_SPI_IMU_sclk]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_IMU_cs_mpu]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_IMU_cs_ms5611]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_IMU_miso]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_IMU_mosi]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_IMU_sclk]
+
+set_property PACKAGE_PIN D1 [get_ports COPTER_SPI_cs]
+set_property PACKAGE_PIN C6 [get_ports COPTER_SPI_miso]
+set_property PACKAGE_PIN C1 [get_ports COPTER_SPI_mosi]
+set_property PACKAGE_PIN C5 [get_ports COPTER_SPI_sclk]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_cs]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_miso]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_mosi]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_SPI_sclk]
+
+set_property PACKAGE_PIN L4 [get_ports COPTER_MOTOR_PWM[0]]
+set_property PACKAGE_PIN C4 [get_ports COPTER_MOTOR_PWM[1]]
+set_property PACKAGE_PIN B4 [get_ports COPTER_MOTOR_PWM[2]]
+set_property PACKAGE_PIN E3 [get_ports COPTER_MOTOR_PWM[3]]
+set_property PACKAGE_PIN G6 [get_ports COPTER_MOTOR_PWM[4]]
+set_property PACKAGE_PIN D3 [get_ports COPTER_MOTOR_PWM[5]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[0]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[1]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[2]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[3]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[4]]
+set_property IOSTANDARD LVCMOS18 [get_ports COPTER_MOTOR_PWM[5]]
+
+# Single Cams
+set_property PACKAGE_PIN A4 [get_ports CAM_SINGLE_IIC_scl_io]
+set_property PACKAGE_PIN A5 [get_ports CAM_SINGLE_IIC_sda_io]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_SINGLE_IIC_scl_io]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_SINGLE_IIC_sda_io]
+
+set_property PACKAGE_PIN B7 [get_ports SINGLE_CAM_1_p]
+set_property PACKAGE_PIN B6 [get_ports SINGLE_CAM_1_n]
+
+set_property PACKAGE_PIN A7 [get_ports SINGLE_CAM_2_p]
+set_property PACKAGE_PIN A6 [get_ports SINGLE_CAM_2_n]
+
+# Stereo Cams
+set_property PACKAGE_PIN L1 [get_ports CAM_STEREO_IIC_scl_io]
+set_property PACKAGE_PIN P7 [get_ports CAM_STEREO_IIC_sda_io]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO_IIC_scl_io]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO_IIC_sda_io]
+
+set_property PACKAGE_PIN P6 [get_ports STEREO_CAM_1_p]
+set_property PACKAGE_PIN P5 [get_ports STEREO_CAM_1_n]
+
+set_property PACKAGE_PIN J7 [get_ports STEREO_CAM_2_p]
+set_property PACKAGE_PIN J6 [get_ports STEREO_CAM_2_n]
+
+set_property PACKAGE_PIN N6 [get_ports STEREO_CAM_3_p]
+set_property PACKAGE_PIN N5 [get_ports STEREO_CAM_3_n]
+
+set_property PACKAGE_PIN J8 [get_ports STEREO_CAM_4_p]
+set_property PACKAGE_PIN K8 [get_ports STEREO_CAM_4_n]
+
+# Camera clocks
+set_property PACKAGE_PIN T1 [get_ports CAM_SINGLE1_SYSCLK]
+set_property PACKAGE_PIN J3 [get_ports CAM_SINGLE2_SYSCLK]
+set_property PACKAGE_PIN M1 [get_ports CAM_STEREO1_SYSCLK]
+set_property PACKAGE_PIN M2 [get_ports CAM_STEREO2_SYSCLK]
+set_property PACKAGE_PIN U1 [get_ports CAM_STEREO3_SYSCLK]
+set_property PACKAGE_PIN U2 [get_ports CAM_STEREO4_SYSCLK]
+
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_SINGLE1_SYSCLK]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_SINGLE2_SYSCLK]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO1_SYSCLK]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO2_SYSCLK]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO3_SYSCLK]
+set_property IOSTANDARD LVCMOS18 [get_ports CAM_STEREO4_SYSCLK]

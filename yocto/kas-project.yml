@@ -1,0 +1,23 @@
+header:
+  version: 2
+  includes:
+    - kas-bsp.yml
+
+machine: base-microzed-iocc-zynq7
+#machine: base-picozed-pciecc-zynq7
+#machine: autocopter-microzed-iocc-zynq7
+#machine: autocopter-picozed-pciecc-zynq7
+#machine: gvi-china-zynq7
+distro: zynq
+
+target:
+  - multiconfig:base-microzed:zynq-image
+  - multiconfig:base-picozed:zynq-image
+  - multiconfig:autocopter-microzed:copter-image
+  - multiconfig:autocopter-picozed:copter-image
+
+local_conf_header:
+  package_ipk: |
+    PACKAGE_CLASSES = "package_ipk"
+  license_whitelist: |
+    LICENSE_FLAGS_WHITELIST = "xilinx"

@@ -1,0 +1,26 @@
+From 75f40d5dc4f23299e50fa61912059ad683bb39c0 Mon Sep 17 00:00:00 2001
+From: Andreas Galauner <andreas@galauner.de>
+Date: Mon, 25 Nov 2019 00:13:27 +0100
+Subject: [PATCH 2/4] Add compatible strings to spidev driver for Autocopter
+ IMU devices
+
+---
+ drivers/spi/spidev.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/spi/spidev.c b/drivers/spi/spidev.c
+index cda10719d1d1..b173e760b2e6 100644
+--- a/drivers/spi/spidev.c
++++ b/drivers/spi/spidev.c
+@@ -669,6 +669,8 @@ static const struct of_device_id spidev_dt_ids[] = {
+ 	{ .compatible = "lineartechnology,ltc2488" },
+ 	{ .compatible = "ge,achc" },
+ 	{ .compatible = "semtech,sx1301" },
++	{ .compatible = "autocopter,mpu9250" },
++	{ .compatible = "autocopter,ms5611" },
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(of, spidev_dt_ids);
+-- 
+2.24.0
+

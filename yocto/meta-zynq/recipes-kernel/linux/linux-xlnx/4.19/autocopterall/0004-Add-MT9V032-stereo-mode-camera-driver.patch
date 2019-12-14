@@ -1,0 +1,813 @@
+From 87bef9d026af8563c9e3a76e636662fe190c8590 Mon Sep 17 00:00:00 2001
+From: Andreas Galauner <andreas@galauner.de>
+Date: Mon, 25 Nov 2019 00:14:17 +0100
+Subject: [PATCH 4/4] Add MT9V032 stereo mode camera driver
+
+---
+ drivers/media/i2c/Kconfig          |   9 +
+ drivers/media/i2c/Makefile         |   1 +
+ drivers/media/i2c/mt9v032_stereo.c | 760 +++++++++++++++++++++++++++++
+ 3 files changed, 770 insertions(+)
+ create mode 100644 drivers/media/i2c/mt9v032_stereo.c
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 82af97430e5b..47069bb71389 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -884,6 +884,15 @@ config VIDEO_MT9V111
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called mt9v111.
+ 
++config VIDEO_MT9V032_STEREO
++	tristate "Micron MT9V032 sensor support in stereo configuration"
++	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
++	depends on MEDIA_CAMERA_SUPPORT
++	select REGMAP_I2C
++	---help---
++	  This is a Video4Linux2 sensor-level driver for the Micron
++	  MT9V032 752x480 CMOS sensor in stereo configuration.
++
+ config VIDEO_SR030PC30
+ 	tristate "Siliconfile SR030PC30 sensor support"
+ 	depends on I2C && VIDEO_V4L2
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index a94eb03d10d4..7d8a634c2c92 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -87,6 +87,7 @@ obj-$(CONFIG_VIDEO_MT9T001) += mt9t001.o
+ obj-$(CONFIG_VIDEO_MT9T112) += mt9t112.o
+ obj-$(CONFIG_VIDEO_MT9V011) += mt9v011.o
+ obj-$(CONFIG_VIDEO_MT9V032) += mt9v032.o
++obj-$(CONFIG_VIDEO_MT9V032_STEREO) += mt9v032_stereo.o
+ obj-$(CONFIG_VIDEO_MT9V111) += mt9v111.o
+ obj-$(CONFIG_VIDEO_SR030PC30)	+= sr030pc30.o
+ obj-$(CONFIG_VIDEO_NOON010PC30)	+= noon010pc30.o
+diff --git a/drivers/media/i2c/mt9v032_stereo.c b/drivers/media/i2c/mt9v032_stereo.c
+new file mode 100644
+index 000000000000..a49b13308d58
+--- /dev/null
++++ b/drivers/media/i2c/mt9v032_stereo.c
+@@ -0,0 +1,760 @@
++/*
++ * Driver for MT9V034 CMOS Image Sensors in stereo vision configuration
++ *
++ * Copyright (C) 2017, Andreas Galauner <andreas@galauner.de>
++ *
++ * Based on driver for MT9V022, MT9V024, MT9V032, and MT9V034 CMOS Image Sensors
++ *
++ * Copyright (C) 2010, Laurent Pinchart <laurent.pinchart@ideasonboard.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#define DEBUG
++
++#include <linux/clk.h>
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/log2.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <linux/of_gpio.h>
++#include <linux/regmap.h>
++#include <linux/slab.h>
++#include <linux/videodev2.h>
++#include <linux/v4l2-mediabus.h>
++#include <linux/module.h>
++#include <linux/gpio.h>
++#include <linux/gpio/consumer.h>
++
++#include <media/v4l2-ctrls.h>
++#include <media/v4l2-device.h>
++#include <media/v4l2-fwnode.h>
++#include <media/v4l2-subdev.h>
++
++/* The first four rows are black rows. The active area spans 753x481 pixels. */
++#define MT9V032_PIXEL_ARRAY_HEIGHT          485
++#define MT9V032_PIXEL_ARRAY_WIDTH           753
++
++#define MT9V032_SYSCLK_FREQ_DEF             26600000
++
++#define MT9V032_CHIP_VERSION                0x00
++#define     MT9V032_CHIP_ID_REV1            0x1311
++#define     MT9V032_CHIP_ID_REV3            0x1313
++#define     MT9V034_CHIP_ID_REV1            0X1324
++#define MT9V032_COLUMN_START                0x01
++#define     MT9V032_COLUMN_START_MIN        1
++#define     MT9V032_COLUMN_START_DEF        1
++#define     MT9V032_COLUMN_START_MAX        752
++#define MT9V032_ROW_START               0x02
++#define     MT9V032_ROW_START_MIN           4
++#define     MT9V032_ROW_START_DEF           5
++#define     MT9V032_ROW_START_MAX           482
++#define MT9V032_WINDOW_HEIGHT               0x03
++#define     MT9V032_WINDOW_HEIGHT_MIN       1
++#define     MT9V032_WINDOW_HEIGHT_DEF       480
++#define     MT9V032_WINDOW_HEIGHT_MAX       480
++#define MT9V032_WINDOW_WIDTH                0x04
++#define     MT9V032_WINDOW_WIDTH_MIN        1
++#define     MT9V032_WINDOW_WIDTH_DEF        752
++#define     MT9V032_WINDOW_WIDTH_MAX        752
++#define MT9V032_HORIZONTAL_BLANKING         0x05
++#define     MT9V032_HORIZONTAL_BLANKING_MIN     43
++#define     MT9V034_HORIZONTAL_BLANKING_MIN     61
++#define     MT9V032_HORIZONTAL_BLANKING_DEF     94
++#define     MT9V032_HORIZONTAL_BLANKING_MAX     1023
++#define MT9V032_VERTICAL_BLANKING           0x06
++#define     MT9V032_VERTICAL_BLANKING_MIN       4
++#define     MT9V034_VERTICAL_BLANKING_MIN       2
++#define     MT9V032_VERTICAL_BLANKING_DEF       45
++#define     MT9V032_VERTICAL_BLANKING_MAX       3000
++#define     MT9V034_VERTICAL_BLANKING_MAX       32288
++#define MT9V032_CHIP_CONTROL                0x07
++#define     MT9V032_CHIP_CONTROL_MASTER_MODE    (1 << 3)
++#define     MT9V032_CHIP_CONTROL_STEREOSCOPY_MODE (1 << 5)
++#define     MT9V032_CHIP_CONTROL_STEREOSCOPY_SLAVE (1 << 6)
++#define     MT9V032_CHIP_CONTROL_DOUT_ENABLE    (1 << 7)
++#define     MT9V032_CHIP_CONTROL_SEQUENTIAL     (1 << 8)
++#define MT9V032_SHUTTER_WIDTH1              0x08
++#define MT9V032_SHUTTER_WIDTH2              0x09
++#define MT9V032_SHUTTER_WIDTH_CONTROL           0x0a
++#define MT9V032_TOTAL_SHUTTER_WIDTH         0x0b
++#define     MT9V032_TOTAL_SHUTTER_WIDTH_MIN     1
++#define     MT9V034_TOTAL_SHUTTER_WIDTH_MIN     0
++#define     MT9V032_TOTAL_SHUTTER_WIDTH_DEF     480
++#define     MT9V032_TOTAL_SHUTTER_WIDTH_MAX     32767
++#define     MT9V034_TOTAL_SHUTTER_WIDTH_MAX     32765
++#define MT9V032_RESET                   0x0c
++#define MT9V032_READ_MODE               0x0d
++#define     MT9V032_READ_MODE_ROW_BIN_MASK      (3 << 0)
++#define     MT9V032_READ_MODE_ROW_BIN_SHIFT     0
++#define     MT9V032_READ_MODE_COLUMN_BIN_MASK   (3 << 2)
++#define     MT9V032_READ_MODE_COLUMN_BIN_SHIFT  2
++#define     MT9V032_READ_MODE_ROW_FLIP      (1 << 4)
++#define     MT9V032_READ_MODE_COLUMN_FLIP       (1 << 5)
++#define     MT9V032_READ_MODE_DARK_COLUMNS      (1 << 6)
++#define     MT9V032_READ_MODE_DARK_ROWS     (1 << 7)
++#define     MT9V032_READ_MODE_RESERVED      0x0300
++#define MT9V032_PIXEL_OPERATION_MODE            0x0f
++#define     MT9V034_PIXEL_OPERATION_MODE_HDR    (1 << 0)
++#define     MT9V034_PIXEL_OPERATION_MODE_COLOR  (1 << 1)
++#define     MT9V032_PIXEL_OPERATION_MODE_COLOR  (1 << 2)
++#define     MT9V032_PIXEL_OPERATION_MODE_HDR    (1 << 6)
++#define MT9V032_ANALOG_GAIN             0x35
++#define     MT9V032_ANALOG_GAIN_MIN         16
++#define     MT9V032_ANALOG_GAIN_DEF         16
++#define     MT9V032_ANALOG_GAIN_MAX         64
++#define MT9V032_MAX_ANALOG_GAIN             0x36
++#define     MT9V032_MAX_ANALOG_GAIN_MAX     127
++#define MT9V032_FRAME_DARK_AVERAGE          0x42
++#define MT9V032_DARK_AVG_THRESH             0x46
++#define     MT9V032_DARK_AVG_LOW_THRESH_MASK    (255 << 0)
++#define     MT9V032_DARK_AVG_LOW_THRESH_SHIFT   0
++#define     MT9V032_DARK_AVG_HIGH_THRESH_MASK   (255 << 8)
++#define     MT9V032_DARK_AVG_HIGH_THRESH_SHIFT  8
++#define MT9V032_ROW_NOISE_CORR_CONTROL          0x70
++#define     MT9V034_ROW_NOISE_CORR_ENABLE       (1 << 0)
++#define     MT9V034_ROW_NOISE_CORR_USE_BLK_AVG  (1 << 1)
++#define     MT9V032_ROW_NOISE_CORR_ENABLE       (1 << 5)
++#define     MT9V032_ROW_NOISE_CORR_USE_BLK_AVG  (1 << 7)
++#define MT9V032_PIXEL_CLOCK             0x74
++#define MT9V034_PIXEL_CLOCK             0x72
++#define     MT9V032_PIXEL_CLOCK_INV_LINE        (1 << 0)
++#define     MT9V032_PIXEL_CLOCK_INV_FRAME       (1 << 1)
++#define     MT9V032_PIXEL_CLOCK_XOR_LINE        (1 << 2)
++#define     MT9V032_PIXEL_CLOCK_CONT_LINE       (1 << 3)
++#define     MT9V032_PIXEL_CLOCK_INV_PXL_CLK     (1 << 4)
++#define MT9V032_TEST_PATTERN                0x7f
++#define     MT9V032_TEST_PATTERN_DATA_MASK      (1023 << 0)
++#define     MT9V032_TEST_PATTERN_DATA_SHIFT     0
++#define     MT9V032_TEST_PATTERN_USE_DATA       (1 << 10)
++#define     MT9V032_TEST_PATTERN_GRAY_MASK      (3 << 11)
++#define     MT9V032_TEST_PATTERN_GRAY_NONE      (0 << 11)
++#define     MT9V032_TEST_PATTERN_GRAY_VERTICAL  (1 << 11)
++#define     MT9V032_TEST_PATTERN_GRAY_HORIZONTAL    (2 << 11)
++#define     MT9V032_TEST_PATTERN_GRAY_DIAGONAL  (3 << 11)
++#define     MT9V032_TEST_PATTERN_ENABLE     (1 << 13)
++#define     MT9V032_TEST_PATTERN_FLIP       (1 << 14)
++#define MT9V032_AEC_AGC_ENABLE              0xaf
++#define     MT9V032_AEC_ENABLE          (1 << 0)
++#define     MT9V032_AGC_ENABLE          (1 << 1)
++#define MT9V032_THERMAL_INFO                0xc1
++
++#define MT9V032_LVDS_MASTER_CONTROL         0xb1
++#define     MT9V032_LVDS_PLL_BYPASS     (1 << 0)
++#define     MT9V032_LVDS_POWERDOWN      (1 << 1)
++#define     MT9V032_LVDS_PLL_TEST_MODE  (1 << 2)
++#define     MT9V032_LVDS_TEST_MODE      (1 << 3)
++
++#define MT9V032_LVDS_SHIFT_CLOCK_CONTROL    0xb2
++#define     MT9V032_SHIFT_CLK_DELAY_MASK    (7 << 0)
++#define     MT9V032_SHIFT_CLK_DELAY_SHIFT   0
++#define     MT9V032_LVDS_CLOCK_OUTPUT_ENA   (1 << 4)
++
++#define MT9V032_LVDS_DATA_CONTROL           0xb3
++#define     MT9V032_DATA_DELAY_MASK         (7 << 0)
++#define     MT9V032_DATA_DELAY_SHIFT        0
++#define     MT9V032_LVDS_DATA_INPUT_ENA     (1 << 4)
++
++#define MT9V032_LVDS_LATENCY_CONTROL        0xb4
++#define     MT9V032_STREAM_LATENCY_SELECT_MASK  (3 << 0)
++#define     MT9V032_STREAM_LATENCY_SELECT_SHIFT 0
++
++#define MT9V032_LVDS_PAYLOAD_CONTROL        0xb6
++#define     MT9V032_LVDS_PAYLOAD_10BIT      (1 << 0)
++
++#define MT9V032_STEREO_ERROR_CONTROL        0xb7
++#define     MT9V032_STEREO_ERROR_DETECT_ENABLE  (1 << 0)
++#define     MT9V032_STEREO_ERROR_STICK_ENABLE   (1 << 1)
++#define     MT9V032_STEREO_ERROR_CLEAR      (1 << 2)
++
++#define MT9V032_STEREO_ERROR_FLAG           0xb8
++
++//Constants for master/slave selection
++#define MT9V032_SELECT_MASTER   0
++#define MT9V032_SELECT_SLAVE    1
++#define MT9V032_SELECT_BOTH     2
++
++
++struct mt9v032_gpios {
++    struct gpio_desc* adr0;
++    struct gpio_desc* adr1;
++    struct gpio_desc* reset;
++    struct gpio_desc* standby;
++    struct gpio_desc* douten;
++};
++
++struct mt9v032 {
++    struct v4l2_subdev subdev;
++    struct media_pad pad;
++
++    struct v4l2_mbus_framefmt format;
++
++    struct mt9v032_gpios gpios_master;
++    struct mt9v032_gpios gpios_slave;
++
++    u32 sysclk;
++};
++
++static int mt9v032_stereo_perform_link_training(struct mt9v032* mt9v032);
++
++static void mt9v032_gpios_select(struct mt9v032* mt9v032, int master_slave)
++{
++    struct i2c_client *client = v4l2_get_subdevdata(&mt9v032->subdev);
++
++    if(master_slave == MT9V032_SELECT_MASTER) {
++        dev_dbg(&client->dev, "%s: selecting master chip\n", __func__);
++        gpiod_set_value_cansleep(mt9v032->gpios_master.adr0, 0);
++        gpiod_set_value_cansleep(mt9v032->gpios_slave.adr0, 1);
++    } else if(master_slave == MT9V032_SELECT_SLAVE) {
++        dev_dbg(&client->dev, "%s: selecting slave chip\n", __func__);
++        gpiod_set_value_cansleep(mt9v032->gpios_master.adr0, 1);
++        gpiod_set_value_cansleep(mt9v032->gpios_slave.adr0, 0);
++    } else {
++        dev_dbg(&client->dev, "%s: selecting both chips\n", __func__);
++        gpiod_set_value_cansleep(mt9v032->gpios_master.adr0, 0);
++        gpiod_set_value_cansleep(mt9v032->gpios_slave.adr0, 0);
++    }
++}
++
++static struct mt9v032 *to_mt9v032(struct v4l2_subdev *sd)
++{
++    return container_of(sd, struct mt9v032, subdev);
++}
++
++static int mt9v032_stereo_read(struct i2c_client *client, const u8 reg)
++{
++    //s32 data = i2c_smbus_read_word_swapped(client, reg);
++    //dev_dbg(&client->dev, "%s: read 0x%04x from 0x%02x\n", __func__, data, reg);
++
++    s32 data = i2c_smbus_read_byte_data(client, reg);
++    data <<= 8;
++    data |= i2c_smbus_read_byte_data(client, 0xF0);
++
++    return data;
++}
++
++static int mt9v032_stereo_write(struct i2c_client *client, const u8 reg, const u16 data)
++{
++    //dev_dbg(&client->dev, "%s: writing 0x%04x to 0x%02x\n", __func__, data, reg);
++    //return i2c_smbus_write_word_swapped(client, reg, data);
++
++    i2c_smbus_write_byte_data(client, reg, data >> 8);
++    return i2c_smbus_write_byte_data(client, 0xF0, data & 0xFF);
++}
++
++static int mt9v032_stereo_set_bit(struct i2c_client* client, const u8 reg, const u16 bit)
++{
++    u16 tmp;
++    tmp = mt9v032_stereo_read(client, reg);
++    if(tmp < 0) return tmp;
++    tmp |= (1 << bit);
++    return mt9v032_stereo_write(client, reg, tmp);
++}
++
++static int mt9v032_stereo_clear_bit(struct i2c_client* client, const u8 reg, const u16 bit)
++{
++    u16 tmp;
++    tmp = mt9v032_stereo_read(client, reg);
++    if(tmp < 0) return tmp;
++    tmp &= ~(1 << bit);
++    return mt9v032_stereo_write(client, reg, tmp);
++}
++
++static int mt9v032_stereo_set_with_mask(struct i2c_client* client, const u8 reg, u16 mask, u16 bits)
++{
++    uint16_t tmp;
++    tmp = mt9v032_stereo_read(client, reg);
++    if(tmp < 0) return tmp;
++    tmp &= ~mask;
++    tmp |= bits;
++    return mt9v032_stereo_write(client, reg, tmp);
++}
++
++
++
++
++
++
++
++/* -----------------------------------------------------------------------------
++ * V4L2 subdev video operations
++ */
++
++static struct v4l2_mbus_framefmt *
++__mt9v032_get_pad_format(struct mt9v032 *mt9v032, struct v4l2_subdev_pad_config *cfg,
++             unsigned int pad, enum v4l2_subdev_format_whence which)
++{
++    switch (which) {
++    case V4L2_SUBDEV_FORMAT_TRY:
++        return v4l2_subdev_get_try_format(&mt9v032->subdev, cfg, pad);
++    case V4L2_SUBDEV_FORMAT_ACTIVE:
++        return &mt9v032->format;
++    default:
++        return NULL;
++    }
++}
++
++static int mt9v032_s_stream(struct v4l2_subdev *subdev, int enable)
++{
++    // const u16 mode = MT9V032_CHIP_CONTROL_MASTER_MODE
++    //            | MT9V032_CHIP_CONTROL_DOUT_ENABLE
++    //            | MT9V032_CHIP_CONTROL_SEQUENTIAL;
++    struct mt9v032 *mt9v032 = to_mt9v032(subdev);
++    struct i2c_client *client = v4l2_get_subdevdata(&mt9v032->subdev);
++    // struct v4l2_rect *crop = &mt9v032->crop;
++    // struct regmap *map = mt9v032->regmap;
++    // unsigned int hbin;
++    // unsigned int vbin;
++    int ret;
++    int i;
++
++    dev_dbg(&client->dev, "mt9v032_s_stream(): %d\n", enable);
++
++    ret = mt9v032_stereo_perform_link_training(mt9v032);
++    if(ret) {
++        dev_err(&client->dev, "Error training inter-camera-link\n");
++        goto out;
++    }
++
++    // if (!enable)
++    // {
++    //     ///* Disable LVDS output if needed */
++    //     //if (mt9v032->lvds_mode)
++    //     //{
++    //     //  printk("Disabling LVDS\n");
++    //     //  regmap_update_bits(map, MT9V032_LVDS_MASTER_CONTROL, MT9V032_LVDS_POWERDOWN, MT9V032_LVDS_POWERDOWN);
++    //     //}
++
++    //     ret = regmap_update_bits(map, MT9V032_CHIP_CONTROL, mode, 0);
++
++    //     return ret;
++    // }
++
++    // /* Configure the window size and row/column bin */
++    // hbin = fls(mt9v032->hratio) - 1;
++    // vbin = fls(mt9v032->vratio) - 1;
++    // ret = regmap_update_bits(map, MT9V032_READ_MODE,
++    //              ~MT9V032_READ_MODE_RESERVED,
++    //              hbin << MT9V032_READ_MODE_COLUMN_BIN_SHIFT |
++    //              vbin << MT9V032_READ_MODE_ROW_BIN_SHIFT);
++    // if (ret < 0)
++    //     return ret;
++
++    // ret = regmap_write(map, MT9V032_COLUMN_START, crop->left);
++    // if (ret < 0)
++    //     return ret;
++
++    // ret = regmap_write(map, MT9V032_ROW_START, crop->top);
++    // if (ret < 0)
++    //     return ret;
++
++    // ret = regmap_write(map, MT9V032_WINDOW_WIDTH, crop->width);
++    // if (ret < 0)
++    //     return ret;
++
++    // ret = regmap_write(map, MT9V032_WINDOW_HEIGHT, crop->height);
++    // if (ret < 0)
++    //     return ret;
++
++    // ret = mt9v032_update_hblank(mt9v032);
++    // if (ret < 0)
++    //     return ret;
++
++    // /* Switch to master "normal" mode */
++    // ret = regmap_update_bits(map, MT9V032_CHIP_CONTROL, mode, mode);
++    // if (ret < 0)
++    //     return ret;
++
++    // // /* Configure LVDS outputs if desired */
++    // // if(mt9v032->lvds_mode) {
++    // //  printk("Enabling LVDS\n");
++
++    // //  //no PLL bypass, no LVDS powerdown, no PLL test, no LVDS test
++    // //  ret = regmap_write(map, MT9V032_LVDS_MASTER_CONTROL, 0);
++    // //  if (ret < 0)
++    // //      return ret;
++
++    // //  //disable 10 bit mode
++    // //  regmap_write(map, MT9V032_LVDS_PAYLOAD_CONTROL, 0);
++    // // }
++
++    // return ret;
++
++    // if(enable) {
++    //     for(i = 0; i < 15; i++) {
++    //         if(!mt9v032_stereo_perform_link_training(mt9v032)) {
++    //             printk("Inter-sensor link established after %d iterations\n", i);
++    //             break;
++    //         }
++    //     }
++    // }
++
++out:
++    return ret;
++}
++
++static int mt9v032_enum_mbus_code(struct v4l2_subdev *subdev,
++                  struct v4l2_subdev_pad_config *cfg,
++                  struct v4l2_subdev_mbus_code_enum *code)
++{
++    if (code->index > 0)
++        return -EINVAL;
++
++    code->code = MEDIA_BUS_FMT_Y8_1X8;
++
++    return 0;
++}
++
++static int mt9v032_enum_frame_size(struct v4l2_subdev *subdev,
++                   struct v4l2_subdev_pad_config *cfg,
++                   struct v4l2_subdev_frame_size_enum *fse)
++{
++    if (fse->index > 0 || fse->code != MEDIA_BUS_FMT_Y8_1X8)
++        return -EINVAL;
++
++    fse->min_width = MT9V032_WINDOW_WIDTH_DEF*2;
++    fse->max_width = MT9V032_WINDOW_WIDTH_DEF*2;
++    fse->min_height = MT9V032_WINDOW_HEIGHT_DEF;
++    fse->max_height = MT9V032_WINDOW_HEIGHT_DEF;
++
++    return 0;
++}
++
++static int mt9v032_get_format(struct v4l2_subdev *subdev,
++                  struct v4l2_subdev_pad_config *cfg,
++                  struct v4l2_subdev_format *format)
++{
++    struct mt9v032 *mt9v032 = to_mt9v032(subdev);
++
++    format->format = *__mt9v032_get_pad_format(mt9v032, cfg, format->pad, format->which);
++    return 0;
++}
++
++static int mt9v032_set_format(struct v4l2_subdev *subdev,
++                  struct v4l2_subdev_pad_config *cfg,
++                  struct v4l2_subdev_format *fmt)
++{
++    struct mt9v032 *mt9v032 = to_mt9v032(subdev);
++    struct v4l2_mbus_framefmt *format;
++
++    format = __mt9v032_get_pad_format(mt9v032, cfg, fmt->pad, fmt->which);
++
++    //format->width = clamp_t(unsigned int, fmt->format.width, XVIP_MIN_WIDTH, XVIP_MAX_WIDTH);
++    //format->height = clamp_t(unsigned int, fmt->format.height, XVIP_MIN_HEIGHT, XVIP_MAX_HEIGHT);
++
++    fmt->format = *format;
++
++    return 0;
++}
++
++/* -----------------------------------------------------------------------------
++ * V4L2 subdev core operations
++ */
++
++static int mt9v032_stereo_perform_link_training(struct mt9v032* mt9v032)
++{
++    int i;
++    u32 error;
++    struct i2c_client *client = v4l2_get_subdevdata(&mt9v032->subdev);
++
++    dev_dbg(&client->dev, "setting up inter-sensor link\n");
++
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_BOTH);
++
++    //2) disable LVDS powerdown
++    mt9v032_stereo_write(client, MT9V032_LVDS_MASTER_CONTROL, 0);
++
++    //Enable AEC/AGC
++    mt9v032_stereo_write(client, MT9V032_AEC_AGC_ENABLE, MT9V032_AGC_ENABLE | MT9V032_AEC_ENABLE);
++
++    //3) enable PLL bypass for master
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++    mt9v032_stereo_write(client, MT9V032_LVDS_MASTER_CONTROL, 1);
++
++    //4) stereoscopy for both sensors
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_BOTH);
++    mt9v032_stereo_write(client, MT9V032_CHIP_CONTROL, 0x328);
++
++    //6) enable LVDS driver for both cams
++    mt9v032_stereo_write(client, MT9V032_LVDS_DATA_CONTROL, 0);
++
++    //7) enable LVDS receiver for both cams (FIXME: both? only one cam should be needed here - FPGA doesn't need the clock)
++    mt9v032_stereo_write(client, MT9V032_LVDS_SHIFT_CLOCK_CONTROL, 0);
++
++    //8) PLL bypass for master (again?)
++    //mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++    //mt9v032_stereo_set_bit(client, MT9V032_LVDS_MASTER_CONTROL, 0);
++
++    //9) PLL enable ( = PLL bypass disabled) for slave
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_SLAVE);
++    // give the PLL some time to lock? Unsure why this is needed, without it the inter-camera-link is unreliable
++    msleep(1);
++
++    //10) stereo slave for slave
++    mt9v032_stereo_set_bit(client, MT9V032_CHIP_CONTROL, 6);
++
++
++    for(i = 0; i < 256; i++) {
++        dev_dbg(&client->dev, "Training step: %d\r\n", i);
++
++        //disable stereo error detection
++        mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++        mt9v032_stereo_write(client, MT9V032_STEREO_ERROR_CONTROL, 0);
++
++        //setup inter-sensor skew registers
++        mt9v032_stereo_set_with_mask(client, MT9V032_LVDS_SHIFT_CLOCK_CONTROL, 7, (i & 0x7) >> 3);
++        mt9v032_stereo_set_with_mask(client, MT9V032_LVDS_DATA_CONTROL, 7, (i & 0x38) >> 3);
++        mt9v032_stereo_set_with_mask(client, MT9V032_LVDS_LATENCY_CONTROL, 3, (i & 0xC0) >> 6);
++
++        //12) reset both chips
++        mt9v032_gpios_select(mt9v032, MT9V032_SELECT_BOTH);
++        mt9v032_stereo_write(client, MT9V032_RESET, 1);
++        udelay(1);
++
++        //enable stereo error detection and clear error bit
++        mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++        mt9v032_stereo_write(client, MT9V032_STEREO_ERROR_CONTROL, 5);
++
++        //"unclear" error flag, if this gets set by the hardware again later, link training values are wrong
++        mt9v032_stereo_write(client, MT9V032_STEREO_ERROR_CONTROL, 3);
++
++        //wait a bit for some reserved values to occur inbetween the cameras so that the master has a chance to assert the error bit
++        msleep(1);
++
++        //13) read stereoscopy bit error flag from master
++        error = mt9v032_stereo_read(client, MT9V032_STEREO_ERROR_FLAG);
++        dev_dbg(&client->dev, "Stereo error flag: 0x%x\r\n", error);
++        if(!error)
++        {
++            dev_dbg(&client->dev, "got inter-sensor link_freq delay value 0x%02x\n", i);
++            return 0;
++        }
++    }
++
++    return -EIO;
++}
++
++/* -----------------------------------------------------------------------------
++ * V4L2 subdev internal operations
++ */
++
++static int mt9v032_stereo_registered(struct v4l2_subdev *subdev)
++{
++    struct i2c_client *client = v4l2_get_subdevdata(subdev);
++    struct mt9v032 *mt9v032 = to_mt9v032(subdev);
++    u32 version_master, version_slave;
++    int ret;
++    int i;
++
++    dev_info(&client->dev, "Probing MT9V032s in stereo config at master address 0x%02x\n", client->addr);
++
++    //Read and check the master sensor version
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++    version_master = mt9v032_stereo_read(client, MT9V032_CHIP_VERSION);
++    if(version_master < 0) {
++        dev_err(&client->dev, "Read of version for master camera chip failed\n");
++        return -ENODEV;
++    }
++
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_SLAVE);
++    version_slave = mt9v032_stereo_read(client, MT9V032_CHIP_VERSION);
++    if(version_slave < 0) {
++        dev_err(&client->dev, "Read of version for slave camera chip failed\n");
++        return -ENODEV;
++    }
++
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++
++    if (version_master != version_slave) {
++        dev_err(&client->dev, "Master chip version 0x%04x is different from slave chip version 0x%04x\n", version_master, version_slave);
++        return -ENODEV;
++    }
++
++    if (version_master != MT9V034_CHIP_ID_REV1) {
++        dev_err(&client->dev, "Unsupported chip version 0x%04x\n", version_master);
++        return -ENODEV;
++    }
++
++    dev_info(&client->dev, "Camera version 0x%04x detected at address 0x%02x\n", version_master, client->addr);
++
++    return 0;
++}
++
++static int mt9v032_stereo_open(struct v4l2_subdev *subdev, struct v4l2_subdev_fh *fh)
++{
++    return 0;
++}
++
++static int mt9v032_stereo_close(struct v4l2_subdev *subdev, struct v4l2_subdev_fh *fh)
++{
++    return 0;
++}
++
++static int mt9v032_stereo_set_power(struct v4l2_subdev *subdev, int on)
++{
++    return 0;
++}
++
++/* -----------------------------------------------------------------------------
++ * Structures for V4L and regmap initialization
++ */
++
++static struct v4l2_subdev_core_ops mt9v032_subdev_core_ops = {
++    .s_power    = mt9v032_stereo_set_power,
++};
++
++static struct v4l2_subdev_video_ops mt9v032_subdev_video_ops = {
++    .s_stream   = mt9v032_s_stream,
++};
++
++static struct v4l2_subdev_pad_ops mt9v032_subdev_pad_ops = {
++    .enum_mbus_code = mt9v032_enum_mbus_code,
++    .enum_frame_size = mt9v032_enum_frame_size,
++    .get_fmt = mt9v032_get_format,
++    .set_fmt = mt9v032_set_format,
++};
++
++static struct v4l2_subdev_ops mt9v032_subdev_ops = {
++    .core   = &mt9v032_subdev_core_ops,
++    .video  = &mt9v032_subdev_video_ops,
++    .pad    = &mt9v032_subdev_pad_ops,
++};
++
++static const struct v4l2_subdev_internal_ops mt9v032_subdev_internal_ops = {
++    .registered = mt9v032_stereo_registered,
++    .open = mt9v032_stereo_open,
++    .close = mt9v032_stereo_close,
++};
++
++/* -----------------------------------------------------------------------------
++ * Driver initialization and probing
++ */
++
++static int mt9v032_init_gpios(struct i2c_client *client, struct mt9v032_gpios* gpios, const char* of_gpio_key)
++{
++    gpios->adr0 = devm_gpiod_get_index(&client->dev, of_gpio_key, 0, GPIOD_OUT_LOW);
++    gpios->adr1 = devm_gpiod_get_index(&client->dev, of_gpio_key, 1, GPIOD_OUT_LOW);
++    gpios->reset = devm_gpiod_get_index(&client->dev, of_gpio_key, 2, GPIOD_OUT_LOW);
++    gpios->standby = devm_gpiod_get_index(&client->dev, of_gpio_key, 3, GPIOD_OUT_LOW);
++    gpios->douten = devm_gpiod_get_index(&client->dev, of_gpio_key, 4, GPIOD_OUT_LOW);
++
++    if(IS_ERR(gpios->adr0))
++        return PTR_ERR(gpios->adr0);
++
++    if(IS_ERR(gpios->adr1))
++        return PTR_ERR(gpios->adr1);
++
++    if(IS_ERR(gpios->reset))
++        return PTR_ERR(gpios->reset);
++
++    if(IS_ERR(gpios->standby))
++        return PTR_ERR(gpios->standby);
++
++    if(IS_ERR(gpios->douten))
++        return PTR_ERR(gpios->douten);
++
++    return 0;
++}
++
++static int mt9v032_stereo_probe(struct i2c_client *client, const struct i2c_device_id *did)
++{
++    struct mt9v032 *mt9v032;
++    int ret;
++
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_WORD_DATA)) {
++        dev_warn(&client->adapter->dev, "I2C-Adapter doesn't support I2C_FUNC_SMBUS_WORD\n");
++        return -EIO;
++    }
++
++    mt9v032 = devm_kzalloc(&client->dev, sizeof(*mt9v032), GFP_KERNEL);
++    if (!mt9v032)
++        return -ENOMEM;
++
++    //Initialize GPIOs
++    ret = mt9v032_init_gpios(client, &mt9v032->gpios_master, "master");
++    if(ret) {
++        dev_err(&client->dev, "GPIO init for master cam failed\n");
++        return ret;
++    }
++
++    ret = mt9v032_init_gpios(client, &mt9v032->gpios_slave, "slave");
++    if(ret) {
++        dev_err(&client->dev, "GPIO init for slave cam failed\n");
++        return ret;
++    }
++
++    mt9v032->format.code = MEDIA_BUS_FMT_Y8_1X8;
++    mt9v032->format.width = MT9V032_WINDOW_WIDTH_DEF*2;
++    mt9v032->format.height = MT9V032_WINDOW_HEIGHT_DEF;
++    mt9v032->format.field = V4L2_FIELD_NONE;
++    mt9v032->format.colorspace = V4L2_COLORSPACE_SRGB;
++
++    mt9v032->sysclk = MT9V032_SYSCLK_FREQ_DEF;
++
++    v4l2_i2c_subdev_init(&mt9v032->subdev, client, &mt9v032_subdev_ops);
++    mt9v032->subdev.internal_ops = &mt9v032_subdev_internal_ops;
++    mt9v032->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
++
++    mt9v032->pad.flags = MEDIA_PAD_FL_SOURCE;
++    ret = media_entity_pads_init(&mt9v032->subdev.entity, 1, &mt9v032->pad);
++    if (ret < 0)
++        goto err;
++
++    //Select master camera
++    mt9v032_gpios_select(mt9v032, MT9V032_SELECT_MASTER);
++
++    mt9v032->subdev.dev = &client->dev;
++    ret = v4l2_async_register_subdev(&mt9v032->subdev);
++    if (ret < 0)
++        goto err;
++
++    return 0;
++
++err:
++    media_entity_cleanup(&mt9v032->subdev.entity);
++    return ret;
++}
++
++static int mt9v032_stereo_remove(struct i2c_client *client)
++{
++    struct v4l2_subdev *subdev = i2c_get_clientdata(client);
++    //struct mt9v032 *mt9v032 = to_mt9v032(subdev);
++
++    v4l2_async_unregister_subdev(subdev);
++    media_entity_cleanup(&subdev->entity);
++
++    return 0;
++}
++
++static const struct i2c_device_id mt9v032_stereo_id[] = {
++    { "mt9v034m_stereo", 0 },
++    { }
++};
++MODULE_DEVICE_TABLE(i2c, mt9v032_stereo_id);
++
++#if IS_ENABLED(CONFIG_OF)
++static const struct of_device_id mt9v032_stereo_of_match[] = {
++    { .compatible = "aptina,mt9v034m_stereo" },
++    { /* Sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, mt9v032_stereo_of_match);
++#endif
++
++static struct i2c_driver mt9v032_stereo_driver = {
++    .driver = {
++        .name = "mt9v032_stereo",
++        .of_match_table = of_match_ptr(mt9v032_stereo_of_match),
++    },
++    .probe      = mt9v032_stereo_probe,
++    .remove     = mt9v032_stereo_remove,
++    .id_table   = mt9v032_stereo_id,
++};
++
++module_i2c_driver(mt9v032_stereo_driver);
++
++MODULE_DESCRIPTION("Aptina MT9V034 Camera driver for stereo configurations");
++MODULE_AUTHOR("Andreas Galauner <andreas@galauner.de>");
++MODULE_LICENSE("GPL");
+-- 
+2.24.0
+

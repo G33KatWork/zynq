@@ -1,0 +1,6 @@
+[submodule "firmware/linux-xlnx"]
+	path = firmware/linux-xlnx
+	url = https://github.com/Xilinx/linux-xlnx.git
+[submodule "firmware/u-boot-xlnx"]
+	path = firmware/u-boot-xlnx
+	url = https://github.com/Xilinx/u-boot-xlnx.git

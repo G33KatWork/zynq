@@ -1,0 +1,136 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "xlnx,zynq-7000";
+
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            stereocams_clk: stereocams_clock@0 {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <26600000>;
+            };
+
+            stereocams_peripherals_clk: stereocams_clock@1 {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <100000000>;
+            };
+        };
+    };
+
+    fragment@1 {
+        target = <&amba>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            stereocams_iic: i2c@42000000 {
+                compatible = "xlnx,xps-iic-2.00.a";
+                clocks = <&stereocams_peripherals_clk>;
+                interrupt-parent = <&intc>;
+                interrupts = < 0 32 4 >;
+                reg = < 0x42000000 0x10000 >;
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                stereocam1_master_gpio: gpio@71 {
+                    compatible = "nxp,pca9538";
+                    reg = <0x71>;
+                    gpio-controller;
+                    #gpio-cells = <2>;
+                };
+
+                stereocam1_slave_gpio: gpio@70 {
+                    compatible = "nxp,pca9538";
+                    reg = <0x70>;
+                    gpio-controller;
+                    #gpio-cells = <2>;
+                };
+
+                stereocam1_mt9v034m_stereo: stereocam@0 {
+                    compatible = "aptina,mt9v034m_stereo";
+                    clocks = <&stereocams_clk>;
+
+                    /* Address of the master cam */
+                    reg = <0x48>;
+
+                    /* GPIOs for master camera */
+                    master-gpios        =   < &stereocam1_master_gpio 0 0 /*GPIO_ACTIVE_HIGH*/      //ADR0
+                                            &stereocam1_master_gpio 1 0 /*GPIO_ACTIVE_HIGH*/      //ADR1
+                                            &stereocam1_master_gpio 2 1 /*GPIO_ACTIVE_LOW */      //RESET
+                                            &stereocam1_master_gpio 3 0 /*GPIO_ACTIVE_HIGH*/      //STANDBY
+                                            &stereocam1_master_gpio 4 0 /*GPIO_ACTIVE_HIGH*/ >;   //DOUTEN
+
+                    /* GPIOs for slave camera */
+                    slave-gpios         =   < &stereocam1_slave_gpio 0 0 /*GPIO_ACTIVE_HIGH*/       //ADR0
+                                            &stereocam1_slave_gpio 1 0 /*GPIO_ACTIVE_HIGH*/       //ADR1
+                                            &stereocam1_slave_gpio 2 1 /*GPIO_ACTIVE_LOW */       //RESET
+                                            &stereocam1_slave_gpio 3 0 /*GPIO_ACTIVE_HIGH*/       //STANDBY
+                                            &stereocam1_slave_gpio 4 0 /*GPIO_ACTIVE_HIGH*/ >;    //DOUTEN
+                    ports {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        port@0 {
+                            reg = <0>;
+                            stereocam1_mt9v034m_out: endpoint {
+                                remote-endpoint = <&stereocam1_in>;
+                            };
+                        };
+                    };
+                };
+            };
+
+            stereocam1_axi_vdma: dma@42010000 {
+                #dma-cells = <1>;
+
+                compatible = "xlnx,axi-vdma-1.00.a";
+
+                interrupt-parent = <&intc>;
+                interrupts = <0 33 4>;
+
+                reg = <0x42010000 0x10000>;
+                dma-ranges = <0x00000000 0x00000000 0x40000000>;
+
+                xlnx,addrwidth = <32>;
+                xlnx,flush-fsync = <0x1>;
+                /* FIXME: Figure out why this doesn't work with more than one framestores */
+                /* https://forums.xilinx.com/xlnx/board/crawl_message?board.id=ELINUX&message.id=13118 */
+                xlnx,num-fstores = <0x1>;
+
+                clocks = <&stereocams_peripherals_clk>;
+                clock-names = "s_axi_lite_aclk";
+
+                dma-channel@42010030 {
+                    compatible = "xlnx,axi-vdma-s2mm-channel";
+                    interrupts = <0 33 4>;
+                    xlnx,datawidth = <0x20>;
+                    xlnx,device-id = <0x0>;
+                    /*xlnx,genlock-mode ;*/
+                };
+            };
+
+            stereocam1 {
+                compatible = "xlnx,video";
+                dmas = <&stereocam1_axi_vdma 0>;
+                dma-names = "port0";
+
+                ports { 
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+
+                    port@0 {
+                        reg = <0>;
+                        direction = "input";
+                        stereocam1_in: endpoint {
+                            remote-endpoint = <&stereocam1_mt9v034m_out>;
+                        };
+                    };
+                };
+            };
+        };
+    };
+};

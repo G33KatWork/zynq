@@ -1,0 +1,3 @@
+script_addr=0x6000000
+script_name=boot.scr
+uenvcmd=load mmc $sdbootdev:$partid $script_addr $script_name && source $script_addr

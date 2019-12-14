@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="testbench_behav.wdb" id="1">
+         <top_modules>
+            <top_module name="glbl" />
+            <top_module name="testbench" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <WVObjectSize size="21" />
+   <wave_markers>
+      <marker label="" time="30359001667000" />
+      <marker label="" time="30110001667000" />
+   </wave_markers>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/rstn">
+      <obj_property name="ElementShortName">rstn</obj_property>
+      <obj_property name="ObjectShortName">rstn</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/clk">
+      <obj_property name="ElementShortName">clk</obj_property>
+      <obj_property name="ObjectShortName">clk</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/MOTOR_OUT">
+      <obj_property name="ElementShortName">MOTOR_OUT[3:0]</obj_property>
+      <obj_property name="ObjectShortName">MOTOR_OUT[3:0]</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/tick">
+      <obj_property name="ElementShortName">tick[31:0]</obj_property>
+      <obj_property name="ObjectShortName">tick[31:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/addr">
+      <obj_property name="ElementShortName">addr[31:0]</obj_property>
+      <obj_property name="ObjectShortName">addr[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/next_addr">
+      <obj_property name="ElementShortName">next_addr[31:0]</obj_property>
+      <obj_property name="ObjectShortName">next_addr[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/data">
+      <obj_property name="ElementShortName">data[31:0]</obj_property>
+      <obj_property name="ObjectShortName">data[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/next_data">
+      <obj_property name="ElementShortName">next_data[31:0]</obj_property>
+      <obj_property name="ObjectShortName">next_data[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/do_rd">
+      <obj_property name="ElementShortName">do_rd</obj_property>
+      <obj_property name="ObjectShortName">do_rd</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/next_do_rd">
+      <obj_property name="ElementShortName">next_do_rd</obj_property>
+      <obj_property name="ObjectShortName">next_do_rd</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/do_wr">
+      <obj_property name="ElementShortName">do_wr</obj_property>
+      <obj_property name="ObjectShortName">do_wr</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/next_do_wr">
+      <obj_property name="ElementShortName">next_do_wr</obj_property>
+      <obj_property name="ObjectShortName">next_do_wr</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/axi0/master/rdata">
+      <obj_property name="ElementShortName">rdata[31:0]</obj_property>
+      <obj_property name="ObjectShortName">rdata[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/axi0/wdata">
+      <obj_property name="ElementShortName">wdata[31:0]</obj_property>
+      <obj_property name="ObjectShortName">wdata[31:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/timer_value">
+      <obj_property name="ElementShortName">timer_value[31:0]</obj_property>
+      <obj_property name="ObjectShortName">timer_value[31:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/\motor_timing_generator[0].motor_timing_generator /compare_value_latched">
+      <obj_property name="ElementShortName">compare_value_latched[31:0]</obj_property>
+      <obj_property name="ObjectShortName">compare_value_latched[31:0]</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/motors/timer_overflowed">
+      <obj_property name="ElementShortName">timer_overflowed</obj_property>
+      <obj_property name="ObjectShortName">timer_overflowed</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/motor_compare_values">
+      <obj_property name="ElementShortName">motor_compare_values[3:0][31:0]</obj_property>
+      <obj_property name="ObjectShortName">motor_compare_values[3:0][31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+      <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/motor_compare_values[3]">
+         <obj_property name="ElementShortName">[3][31:0]</obj_property>
+         <obj_property name="ObjectShortName">motor_compare_values[3][31:0]</obj_property>
+         <obj_property name="Radix">HEXRADIX</obj_property>
+      </wvobject>
+      <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/motor_compare_values[2]">
+         <obj_property name="ElementShortName">[2][31:0]</obj_property>
+         <obj_property name="ObjectShortName">motor_compare_values[2][31:0]</obj_property>
+         <obj_property name="Radix">HEXRADIX</obj_property>
+      </wvobject>
+      <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/motor_compare_values[1]">
+         <obj_property name="ElementShortName">[1][31:0]</obj_property>
+         <obj_property name="ObjectShortName">motor_compare_values[1][31:0]</obj_property>
+         <obj_property name="Radix">HEXRADIX</obj_property>
+      </wvobject>
+      <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/motor_compare_values[0]">
+         <obj_property name="ElementShortName">[0][31:0]</obj_property>
+         <obj_property name="ObjectShortName">motor_compare_values[0][31:0]</obj_property>
+         <obj_property name="Radix">HEXRADIX</obj_property>
+      </wvobject>
+   </wvobject>
+   <wvobject db_ref_id="1" type="logic" fp_name="/testbench/motors/\motor_timing_generator[0].motor_timing_generator /compare_value_latch">
+      <obj_property name="ElementShortName">compare_value_latch</obj_property>
+      <obj_property name="ObjectShortName">compare_value_latch</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/\motor_timing_generator[0].motor_timing_generator /compare_value">
+      <obj_property name="ElementShortName">compare_value[31:0]</obj_property>
+      <obj_property name="ObjectShortName">compare_value[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+   <wvobject db_ref_id="1" type="array" fp_name="/testbench/motors/\motor_timing_generator[1].motor_timing_generator /compare_value">
+      <obj_property name="ElementShortName">compare_value[31:0]</obj_property>
+      <obj_property name="ObjectShortName">compare_value[31:0]</obj_property>
+      <obj_property name="Radix">HEXRADIX</obj_property>
+   </wvobject>
+</wave_config>
