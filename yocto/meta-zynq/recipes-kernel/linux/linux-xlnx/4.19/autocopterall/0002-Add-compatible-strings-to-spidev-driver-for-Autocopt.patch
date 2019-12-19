@@ -1,7 +1,7 @@
-From 75f40d5dc4f23299e50fa61912059ad683bb39c0 Mon Sep 17 00:00:00 2001
+From 7aff8f0e063cd540a51ba9320e022f9d271940c2 Mon Sep 17 00:00:00 2001
 From: Andreas Galauner <andreas@galauner.de>
 Date: Mon, 25 Nov 2019 00:13:27 +0100
-Subject: [PATCH 2/4] Add compatible strings to spidev driver for Autocopter
+Subject: [PATCH 2/5] Add compatible strings to spidev driver for Autocopter
  IMU devices
 
 ---
@@ -22,5 +22,5 @@ index cda10719d1d1..b173e760b2e6 100644
  };
  MODULE_DEVICE_TABLE(of, spidev_dt_ids);
 -- 
-2.24.0
+2.24.1
 

@@ -1,0 +1,2830 @@
+From 63eaf2f9a68b5395de8c58d56df85dfdcd6587b6 Mon Sep 17 00:00:00 2001
+From: Andreas Galauner <andreas@galauner.de>
+Date: Tue, 17 Dec 2019 06:38:59 +0100
+Subject: [PATCH 5/5] Include ADI drivers for HDMI video output
+
+---
+ drivers/clk/clk-axi-clkgen.c                  | 253 +++++++--
+ drivers/dma/dma-axi-dmac.c                    | 403 ++++++++++++--
+ drivers/dma/virt-dma.c                        |   4 +-
+ drivers/dma/virt-dma.h                        |   4 +
+ drivers/gpu/drm/Kconfig                       |   2 +
+ drivers/gpu/drm/Makefile                      |   1 +
+ drivers/gpu/drm/adi_axi_hdmi/Kconfig          |   8 +
+ drivers/gpu/drm/adi_axi_hdmi/Makefile         |   7 +
+ drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_crtc.c  | 248 +++++++++
+ drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.c   | 231 ++++++++
+ drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.h   |  44 ++
+ .../gpu/drm/adi_axi_hdmi/axi_hdmi_encoder.c   | 522 ++++++++++++++++++
+ drivers/gpu/drm/bridge/adv7511/Makefile       |   1 +
+ drivers/gpu/drm/bridge/adv7511/adv7511.h      |  23 +
+ .../gpu/drm/bridge/adv7511/adv7511_audio.c    |   5 +-
+ .../gpu/drm/bridge/adv7511/adv7511_debugfs.c  | 111 ++++
+ drivers/gpu/drm/bridge/adv7511/adv7511_drv.c  | 105 ++--
+ include/drm/drm_edid.h                        |  16 +
+ include/linux/fpga/adi-axi-common.h           |  84 +++
+ 19 files changed, 1934 insertions(+), 138 deletions(-)
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/Kconfig
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/Makefile
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_crtc.c
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.c
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.h
+ create mode 100644 drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_encoder.c
+ create mode 100644 drivers/gpu/drm/bridge/adv7511/adv7511_debugfs.c
+ create mode 100644 include/linux/fpga/adi-axi-common.h
+
+diff --git a/drivers/clk/clk-axi-clkgen.c b/drivers/clk/clk-axi-clkgen.c
+index 48d11f2598e8..b3b32f203419 100644
+--- a/drivers/clk/clk-axi-clkgen.c
++++ b/drivers/clk/clk-axi-clkgen.c
+@@ -10,6 +10,7 @@
+ 
+ #include <linux/platform_device.h>
+ #include <linux/clk-provider.h>
++#include <linux/fpga/adi-axi-common.h>
+ #include <linux/slab.h>
+ #include <linux/io.h>
+ #include <linux/of.h>
+@@ -29,24 +30,29 @@
+ 
+ #define AXI_CLKGEN_V2_DRP_STATUS_BUSY	BIT(16)
+ 
++#define MMCM_REG_CLKOUT5_2	0x07
+ #define MMCM_REG_CLKOUT0_1	0x08
+ #define MMCM_REG_CLKOUT0_2	0x09
++#define MMCM_REG_CLKOUT6_2	0x13
+ #define MMCM_REG_CLK_FB1	0x14
+ #define MMCM_REG_CLK_FB2	0x15
+ #define MMCM_REG_CLK_DIV	0x16
+ #define MMCM_REG_LOCK1		0x18
+ #define MMCM_REG_LOCK2		0x19
+ #define MMCM_REG_LOCK3		0x1a
++#define MMCM_REG_POWER		0x28
+ #define MMCM_REG_FILTER1	0x4e
+ #define MMCM_REG_FILTER2	0x4f
+ 
+ #define MMCM_CLKOUT_NOCOUNT	BIT(6)
+ 
++#define MMCM_CLK_DIV_DIVIDE	BIT(11)
+ #define MMCM_CLK_DIV_NOCOUNT	BIT(12)
+ 
+ struct axi_clkgen {
+ 	void __iomem *base;
+ 	struct clk_hw clk_hw;
++	unsigned int pcore_version;
+ };
+ 
+ static uint32_t axi_clkgen_lookup_filter(unsigned int m)
+@@ -98,10 +104,17 @@ static uint32_t axi_clkgen_lookup_lock(unsigned int m)
+ 	return 0x1f1f00fa;
+ }
+ 
+-static const unsigned int fpfd_min = 10000;
+-static const unsigned int fpfd_max = 300000;
+-static const unsigned int fvco_min = 600000;
+-static const unsigned int fvco_max = 1200000;
++#ifdef ARCH_ZYNQMP
++static unsigned int fpfd_min = 10000;
++static unsigned int fpfd_max = 450000;
++static unsigned int fvco_min = 800000;
++static unsigned int fvco_max = 1600000;
++#else
++static unsigned int fpfd_min = 10000;
++static unsigned int fpfd_max = 300000;
++static unsigned int fvco_min = 600000;
++static unsigned int fvco_max = 1200000;
++#endif
+ 
+ static void axi_clkgen_calc_params(unsigned long fin, unsigned long fout,
+ 	unsigned int *best_d, unsigned int *best_m, unsigned int *best_dout)
+@@ -109,6 +122,8 @@ static void axi_clkgen_calc_params(unsigned long fin, unsigned long fout,
+ 	unsigned long d, d_min, d_max, _d_min, _d_max;
+ 	unsigned long m, m_min, m_max;
+ 	unsigned long f, dout, best_f, fvco;
++	unsigned long fract_shift = 0;
++	unsigned long fvco_min_fract, fvco_max_fract;
+ 
+ 	fin /= 1000;
+ 	fout /= 1000;
+@@ -121,42 +136,89 @@ static void axi_clkgen_calc_params(unsigned long fin, unsigned long fout,
+ 	d_min = max_t(unsigned long, DIV_ROUND_UP(fin, fpfd_max), 1);
+ 	d_max = min_t(unsigned long, fin / fpfd_min, 80);
+ 
+-	m_min = max_t(unsigned long, DIV_ROUND_UP(fvco_min, fin) * d_min, 1);
+-	m_max = min_t(unsigned long, fvco_max * d_max / fin, 64);
++again:
++	fvco_min_fract = fvco_min << fract_shift;
++	fvco_max_fract = fvco_max << fract_shift;
++
++	m_min = max_t(unsigned long, DIV_ROUND_UP(fvco_min_fract, fin) * d_min, 1);
++	m_max = min_t(unsigned long, fvco_max_fract * d_max / fin, 64 << fract_shift);
+ 
+ 	for (m = m_min; m <= m_max; m++) {
+-		_d_min = max(d_min, DIV_ROUND_UP(fin * m, fvco_max));
+-		_d_max = min(d_max, fin * m / fvco_min);
++		_d_min = max(d_min, DIV_ROUND_UP(fin * m, fvco_max_fract));
++		_d_max = min(d_max, fin * m / fvco_min_fract);
+ 
+ 		for (d = _d_min; d <= _d_max; d++) {
+ 			fvco = fin * m / d;
+ 
+ 			dout = DIV_ROUND_CLOSEST(fvco, fout);
+-			dout = clamp_t(unsigned long, dout, 1, 128);
++			dout = clamp_t(unsigned long, dout, 1, 128 << fract_shift);
+ 			f = fvco / dout;
+ 			if (abs(f - fout) < abs(best_f - fout)) {
+ 				best_f = f;
+ 				*best_d = d;
+-				*best_m = m;
+-				*best_dout = dout;
++				*best_m = m << (3 - fract_shift);
++				*best_dout = dout << (3 - fract_shift);
+ 				if (best_f == fout)
+ 					return;
+ 			}
+ 		}
+ 	}
++
++	/* Lets see if we find a better setting in fractional mode */
++	if (fract_shift == 0) {
++		fract_shift = 3;
++		goto again;
++	}
+ }
+ 
+-static void axi_clkgen_calc_clk_params(unsigned int divider, unsigned int *low,
+-	unsigned int *high, unsigned int *edge, unsigned int *nocount)
++struct axi_clkgen_div_params {
++	unsigned int low;
++	unsigned int high;
++	unsigned int edge;
++	unsigned int nocount;
++	unsigned int frac_en;
++	unsigned int frac;
++	unsigned int frac_wf_f;
++	unsigned int frac_wf_r;
++	unsigned int frac_phase;
++};
++
++static void axi_clkgen_calc_clk_params(unsigned int divider,
++	unsigned int frac_divider, struct axi_clkgen_div_params *params)
+ {
+-	if (divider == 1)
+-		*nocount = 1;
+-	else
+-		*nocount = 0;
+ 
+-	*high = divider / 2;
+-	*edge = divider % 2;
+-	*low = divider - *high;
++	memset(params, 0x0, sizeof(*params));
++
++	if (divider == 1) {
++		params->nocount = 1;
++		return;
++	}
++
++	if (frac_divider == 0) {
++		params->high = divider / 2;
++		params->edge = divider % 2;
++		params->low = divider - params->high;
++	} else {
++		params->frac_en = 1;
++		params->frac = frac_divider;
++
++		params->high = divider / 2;
++		params->edge = divider % 2;
++		params->low = params->high;
++
++		if (params->edge == 0) {
++			params->high--;
++			params->frac_wf_r = 1;
++		}
++
++		if (params->edge == 0 || frac_divider == 1)
++			params->low--;
++		if (((params->edge == 0) ^ (frac_divider == 1)) ||
++			(divider == 2 && frac_divider == 1))
++			params->frac_wf_f = 1;
++
++		params->frac_phase = params->edge * 4 + frac_divider / 2;
++	}
+ }
+ 
+ static void axi_clkgen_write(struct axi_clkgen *axi_clkgen,
+@@ -171,6 +233,49 @@ static void axi_clkgen_read(struct axi_clkgen *axi_clkgen,
+ 	*val = readl(axi_clkgen->base + reg);
+ }
+ 
++static void axi_clkgen_setup_ranges(struct axi_clkgen *axi_clkgen)
++{
++	unsigned int reg_value;
++	unsigned int tech, family, speed_grade, voltage;
++
++	axi_clkgen_read(axi_clkgen, ADI_AXI_REG_FPGA_INFO, &reg_value);
++	tech = ADI_AXI_INFO_FPGA_TECH(reg_value);
++	family = ADI_AXI_INFO_FPGA_FAMILY(reg_value);
++	speed_grade = ADI_AXI_INFO_FPGA_SPEED_GRADE(reg_value);
++
++	axi_clkgen_read(axi_clkgen, ADI_AXI_REG_FPGA_VOLTAGE, &reg_value);
++	voltage = ADI_AXI_INFO_FPGA_VOLTAGE(reg_value);
++
++	switch (speed_grade) {
++	case ADI_AXI_FPGA_SPEED_1 ... ADI_AXI_FPGA_SPEED_1LV:
++		fvco_max = 1200000;
++		fpfd_max = 450000;
++		break;
++	case ADI_AXI_FPGA_SPEED_2 ... ADI_AXI_FPGA_SPEED_2LV:
++		fvco_max = 1440000;
++		fpfd_max = 500000;
++		if ((family == ADI_AXI_FPGA_FAMILY_KINTEX) |
++		    (family == ADI_AXI_FPGA_FAMILY_ARTIX)) {
++			if (voltage < 950) {
++				fvco_max = 1200000;
++				fpfd_max = 450000;
++			}
++		}
++		break;
++	case ADI_AXI_FPGA_SPEED_3:
++		fvco_max = 1600000;
++		fpfd_max = 550000;
++		break;
++	default:
++		break;
++	};
++
++	if (tech == ADI_AXI_FPGA_TECH_ULTRASCALE_PLUS) {
++		fvco_max = 1600000;
++		fvco_min = 800000;
++	}
++}
++
+ static int axi_clkgen_wait_non_busy(struct axi_clkgen *axi_clkgen)
+ {
+ 	unsigned int timeout = 10000;
+@@ -248,15 +353,29 @@ static struct axi_clkgen *clk_hw_to_axi_clkgen(struct clk_hw *clk_hw)
+ 	return container_of(clk_hw, struct axi_clkgen, clk_hw);
+ }
+ 
++static void axi_clkgen_set_div(struct axi_clkgen *axi_clkgen,
++	unsigned int reg1, unsigned int reg2, unsigned int reg3,
++	struct axi_clkgen_div_params *params)
++{
++	axi_clkgen_mmcm_write(axi_clkgen, reg1,
++		(params->high << 6) | params->low, 0xefff);
++	axi_clkgen_mmcm_write(axi_clkgen, reg2,
++		(params->frac << 12) | (params->frac_en << 11) |
++		(params->frac_wf_r << 10) | (params->edge << 7) |
++		(params->nocount << 6), 0x7fff);
++	if (reg3 != 0) {
++		axi_clkgen_mmcm_write(axi_clkgen, reg3,
++			(params->frac_phase << 11) | (params->frac_wf_f << 10), 0x3c00);
++	}
++}
++
+ static int axi_clkgen_set_rate(struct clk_hw *clk_hw,
+ 	unsigned long rate, unsigned long parent_rate)
+ {
+ 	struct axi_clkgen *axi_clkgen = clk_hw_to_axi_clkgen(clk_hw);
+ 	unsigned int d, m, dout;
+-	unsigned int nocount;
+-	unsigned int high;
+-	unsigned int edge;
+-	unsigned int low;
++	struct axi_clkgen_div_params params;
++	uint32_t power = 0;
+ 	uint32_t filter;
+ 	uint32_t lock;
+ 
+@@ -268,24 +387,26 @@ static int axi_clkgen_set_rate(struct clk_hw *clk_hw,
+ 	if (d == 0 || dout == 0 || m == 0)
+ 		return -EINVAL;
+ 
++	if ((dout & 0x7) != 0 || (m & 0x7) != 0)
++		power |= 0x9800;
++
++	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_POWER, power, 0x9800);
++
+ 	filter = axi_clkgen_lookup_filter(m - 1);
+ 	lock = axi_clkgen_lookup_lock(m - 1);
+ 
+-	axi_clkgen_calc_clk_params(dout, &low, &high, &edge, &nocount);
+-	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_CLKOUT0_1,
+-		(high << 6) | low, 0xefff);
+-	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_CLKOUT0_2,
+-		(edge << 7) | (nocount << 6), 0x03ff);
++	axi_clkgen_calc_clk_params(dout >> 3, dout & 0x7, &params);
++	axi_clkgen_set_div(axi_clkgen,  MMCM_REG_CLKOUT0_1, MMCM_REG_CLKOUT0_2,
++		MMCM_REG_CLKOUT5_2, &params);
+ 
+-	axi_clkgen_calc_clk_params(d, &low, &high, &edge, &nocount);
++	axi_clkgen_calc_clk_params(d, 0, &params);
+ 	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_CLK_DIV,
+-		(edge << 13) | (nocount << 12) | (high << 6) | low, 0x3fff);
++		(params.edge << 13) | (params.nocount << 12) |
++		(params.high << 6) | params.low, 0x3fff);
+ 
+-	axi_clkgen_calc_clk_params(m, &low, &high, &edge, &nocount);
+-	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_CLK_FB1,
+-		(high << 6) | low, 0xefff);
+-	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_CLK_FB2,
+-		(edge << 7) | (nocount << 6), 0x03ff);
++	axi_clkgen_calc_clk_params(m >> 3, m & 0x7, &params);
++	axi_clkgen_set_div(axi_clkgen,  MMCM_REG_CLK_FB1, MMCM_REG_CLK_FB2,
++		MMCM_REG_CLKOUT6_2, &params);
+ 
+ 	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_LOCK1, lock & 0x3ff, 0x3ff);
+ 	axi_clkgen_mmcm_write(axi_clkgen, MMCM_REG_LOCK2,
+@@ -315,35 +436,51 @@ static long axi_clkgen_round_rate(struct clk_hw *hw, unsigned long rate,
+ 	return min_t(unsigned long long, tmp, LONG_MAX);
+ }
+ 
++static unsigned int axi_clkgen_get_div(struct axi_clkgen *axi_clkgen,
++	unsigned int reg1, unsigned int reg2)
++{
++	unsigned int val1, val2;
++	unsigned int div;
++
++	axi_clkgen_mmcm_read(axi_clkgen, reg2, &val2);
++	if (val2 & MMCM_CLKOUT_NOCOUNT)
++		return 8;
++
++	axi_clkgen_mmcm_read(axi_clkgen, reg1, &val1);
++
++	div = (val1 & 0x3f) + ((val1 >> 6) & 0x3f);
++	div <<= 3;
++
++	if (val2 & MMCM_CLK_DIV_DIVIDE) {
++		if ((val2 & BIT(7)) && (val2 & 0x7000) != 0x1000)
++			div += 8;
++		else
++			div += 16;
++
++		div += (val2 >> 12) & 0x7;
++	}
++
++	return div;
++}
++
+ static unsigned long axi_clkgen_recalc_rate(struct clk_hw *clk_hw,
+ 	unsigned long parent_rate)
+ {
+ 	struct axi_clkgen *axi_clkgen = clk_hw_to_axi_clkgen(clk_hw);
+ 	unsigned int d, m, dout;
+-	unsigned int reg;
+ 	unsigned long long tmp;
++	unsigned int val;
+ 
+-	axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLKOUT0_2, &reg);
+-	if (reg & MMCM_CLKOUT_NOCOUNT) {
+-		dout = 1;
+-	} else {
+-		axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLKOUT0_1, &reg);
+-		dout = (reg & 0x3f) + ((reg >> 6) & 0x3f);
+-	}
++	dout = axi_clkgen_get_div(axi_clkgen, MMCM_REG_CLKOUT0_1,
++		MMCM_REG_CLKOUT0_2);
++	m = axi_clkgen_get_div(axi_clkgen, MMCM_REG_CLK_FB1,
++		MMCM_REG_CLK_FB2);
+ 
+-	axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLK_DIV, &reg);
+-	if (reg & MMCM_CLK_DIV_NOCOUNT)
++	axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLK_DIV, &val);
++	if (val & MMCM_CLK_DIV_NOCOUNT)
+ 		d = 1;
+ 	else
+-		d = (reg & 0x3f) + ((reg >> 6) & 0x3f);
+-
+-	axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLK_FB2, &reg);
+-	if (reg & MMCM_CLKOUT_NOCOUNT) {
+-		m = 1;
+-	} else {
+-		axi_clkgen_mmcm_read(axi_clkgen, MMCM_REG_CLK_FB1, &reg);
+-		m = (reg & 0x3f) + ((reg >> 6) & 0x3f);
+-	}
++		d = (val & 0x3f) + ((val >> 6) & 0x3f);
+ 
+ 	if (d == 0 || dout == 0)
+ 		return 0;
+@@ -434,6 +571,12 @@ static int axi_clkgen_probe(struct platform_device *pdev)
+ 	if (IS_ERR(axi_clkgen->base))
+ 		return PTR_ERR(axi_clkgen->base);
+ 
++	axi_clkgen_read(axi_clkgen, ADI_AXI_REG_VERSION,
++			&axi_clkgen->pcore_version);
++
++	if (ADI_AXI_PCORE_VER_MAJOR(axi_clkgen->pcore_version) > 0x04)
++		axi_clkgen_setup_ranges(axi_clkgen);
++
+ 	init.num_parents = of_clk_get_parent_count(pdev->dev.of_node);
+ 	if (init.num_parents < 1 || init.num_parents > 2)
+ 		return -EINVAL;
+diff --git a/drivers/dma/dma-axi-dmac.c b/drivers/dma/dma-axi-dmac.c
+index 15b2453d2647..83ed5c6f0930 100644
+--- a/drivers/dma/dma-axi-dmac.c
++++ b/drivers/dma/dma-axi-dmac.c
+@@ -1,10 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0
+ /*
+  * Driver for the Analog Devices AXI-DMAC core
+  *
+- * Copyright 2013-2015 Analog Devices Inc.
++ * Copyright 2013-2019 Analog Devices Inc.
+  *  Author: Lars-Peter Clausen <lars@metafoo.de>
+- *
+- * Licensed under the GPL-2.
+  */
+ 
+ #include <linux/clk.h>
+@@ -19,7 +18,9 @@
+ #include <linux/of.h>
+ #include <linux/of_dma.h>
+ #include <linux/platform_device.h>
++#include <linux/regmap.h>
+ #include <linux/slab.h>
++#include <linux/fpga/adi-axi-common.h>
+ 
+ #include <dt-bindings/dma/axi-dmac.h>
+ 
+@@ -63,6 +64,11 @@
+ #define AXI_DMAC_REG_STATUS		0x430
+ #define AXI_DMAC_REG_CURRENT_SRC_ADDR	0x434
+ #define AXI_DMAC_REG_CURRENT_DEST_ADDR	0x438
++#define AXI_DMAC_REG_DBG0		0x43c
++#define AXI_DMAC_REG_DBG1		0x440
++#define AXI_DMAC_REG_DBG2		0x444
++#define AXI_DMAC_REG_PARTIAL_XFER_LEN	0x44c
++#define AXI_DMAC_REG_PARTIAL_XFER_ID	0x450
+ 
+ #define AXI_DMAC_CTRL_ENABLE		BIT(0)
+ #define AXI_DMAC_CTRL_PAUSE		BIT(1)
+@@ -71,6 +77,12 @@
+ #define AXI_DMAC_IRQ_EOT		BIT(1)
+ 
+ #define AXI_DMAC_FLAG_CYCLIC		BIT(0)
++#define AXI_DMAC_FLAG_LAST		BIT(1)
++#define AXI_DMAC_FLAG_PARTIAL_REPORT	BIT(2)
++
++#define AXI_DMAC_FLAG_PARTIAL_XFER_DONE BIT(31)
++
++#undef SPEED_TEST
+ 
+ /* The maximum ID allocated by the hardware is 31 */
+ #define AXI_DMAC_SG_UNUSED 32U
+@@ -83,12 +95,14 @@ struct axi_dmac_sg {
+ 	unsigned int dest_stride;
+ 	unsigned int src_stride;
+ 	unsigned int id;
++	unsigned int partial_len;
+ 	bool schedule_when_free;
+ };
+ 
+ struct axi_dmac_desc {
+ 	struct virt_dma_desc vdesc;
+ 	bool cyclic;
++	bool have_partial_xfer;
+ 
+ 	unsigned int num_submitted;
+ 	unsigned int num_completed;
+@@ -109,8 +123,10 @@ struct axi_dmac_chan {
+ 	unsigned int dest_type;
+ 
+ 	unsigned int max_length;
+-	unsigned int align_mask;
++	unsigned int address_align_mask;
++	unsigned int length_align_mask;
+ 
++	bool hw_partial_xfer;
+ 	bool hw_cyclic;
+ 	bool hw_2d;
+ };
+@@ -125,6 +141,11 @@ struct axi_dmac {
+ 	struct axi_dmac_chan chan;
+ 
+ 	struct device_dma_parameters dma_parms;
++
++#ifdef SPEED_TEST
++	void *test_virt;
++	dma_addr_t test_phys;
++#endif
+ };
+ 
+ static struct axi_dmac *chan_to_axi_dmac(struct axi_dmac_chan *chan)
+@@ -166,16 +187,16 @@ static int axi_dmac_dest_is_mem(struct axi_dmac_chan *chan)
+ 
+ static bool axi_dmac_check_len(struct axi_dmac_chan *chan, unsigned int len)
+ {
+-	if (len == 0 || len > chan->max_length)
++	if (len == 0)
+ 		return false;
+-	if ((len & chan->align_mask) != 0) /* Not aligned */
++	if ((len & chan->length_align_mask) != 0) /* Not aligned */
+ 		return false;
+ 	return true;
+ }
+ 
+ static bool axi_dmac_check_addr(struct axi_dmac_chan *chan, dma_addr_t addr)
+ {
+-	if ((addr & chan->align_mask) != 0) /* Not aligned */
++	if ((addr & chan->address_align_mask) != 0) /* Not aligned */
+ 		return false;
+ 	return true;
+ }
+@@ -211,11 +232,13 @@ static void axi_dmac_start_transfer(struct axi_dmac_chan *chan)
+ 	}
+ 
+ 	desc->num_submitted++;
+-	if (desc->num_submitted == desc->num_sgs) {
++	if (desc->num_submitted == desc->num_sgs ||
++	    desc->have_partial_xfer) {
+ 		if (desc->cyclic)
+ 			desc->num_submitted = 0; /* Start again */
+ 		else
+ 			chan->next_desc = NULL;
++		flags |= AXI_DMAC_FLAG_LAST;
+ 	} else {
+ 		chan->next_desc = desc;
+ 	}
+@@ -241,6 +264,9 @@ static void axi_dmac_start_transfer(struct axi_dmac_chan *chan)
+ 		desc->num_sgs == 1)
+ 		flags |= AXI_DMAC_FLAG_CYCLIC;
+ 
++	if (chan->hw_partial_xfer)
++		flags |= AXI_DMAC_FLAG_PARTIAL_REPORT;
++
+ 	axi_dmac_write(dmac, AXI_DMAC_REG_X_LENGTH, sg->x_len - 1);
+ 	axi_dmac_write(dmac, AXI_DMAC_REG_Y_LENGTH, sg->y_len - 1);
+ 	axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, flags);
+@@ -253,6 +279,83 @@ static struct axi_dmac_desc *axi_dmac_active_desc(struct axi_dmac_chan *chan)
+ 		struct axi_dmac_desc, vdesc.node);
+ }
+ 
++static inline unsigned int axi_dmac_total_sg_bytes(struct axi_dmac_chan *chan,
++	struct axi_dmac_sg *sg)
++{
++	if (chan->hw_2d)
++		return sg->x_len * sg->y_len;
++	else
++		return sg->x_len;
++}
++
++static void axi_dmac_dequeue_partial_xfers(struct axi_dmac_chan *chan)
++{
++	struct axi_dmac *dmac = chan_to_axi_dmac(chan);
++	struct axi_dmac_desc *desc;
++	struct axi_dmac_sg *sg;
++	u32 xfer_done, len, id, i;
++	bool found_sg;
++
++	do {
++		len = axi_dmac_read(dmac, AXI_DMAC_REG_PARTIAL_XFER_LEN);
++		id  = axi_dmac_read(dmac, AXI_DMAC_REG_PARTIAL_XFER_ID);
++
++		found_sg = false;
++		list_for_each_entry(desc, &chan->active_descs, vdesc.node) {
++			for (i = 0; i < desc->num_sgs; i++) {
++				sg = &desc->sg[i];
++				if (sg->id == AXI_DMAC_SG_UNUSED)
++					continue;
++				if (sg->id == id) {
++					desc->have_partial_xfer = true;
++					sg->partial_len = len;
++					found_sg = true;
++					break;
++				}
++			}
++			if (found_sg)
++				break;
++		}
++
++		if (found_sg) {
++			dev_dbg(dmac->dma_dev.dev,
++				"Found partial segment id=%u, len=%u\n",
++				id, len);
++		} else {
++			dev_warn(dmac->dma_dev.dev,
++				 "Not found partial segment id=%u, len=%u\n",
++				 id, len);
++		}
++
++		/* Check if we have any more partial transfers */
++		xfer_done = axi_dmac_read(dmac, AXI_DMAC_REG_TRANSFER_DONE);
++		xfer_done = !(xfer_done & AXI_DMAC_FLAG_PARTIAL_XFER_DONE);
++
++	} while (!xfer_done);
++}
++
++static void axi_dmac_compute_residue(struct axi_dmac_chan *chan,
++	struct axi_dmac_desc *active)
++{
++	struct dmaengine_result *rslt = &active->vdesc.tx_result;
++	unsigned int start = active->num_completed - 1;
++	struct axi_dmac_sg *sg;
++	unsigned int i, total;
++
++	rslt->result = DMA_TRANS_NOERROR;
++	rslt->residue = 0;
++
++	/*
++	 * We get here if the last completed segment is partial, which
++	 * means we can compute the residue from that segment onwards
++	 */
++	for (i = start; i < active->num_sgs; i++) {
++		sg = &active->sg[i];
++		total = axi_dmac_total_sg_bytes(chan, sg);
++		rslt->residue += (total - sg->partial_len);
++	}
++}
++
+ static bool axi_dmac_transfer_done(struct axi_dmac_chan *chan,
+ 	unsigned int completed_transfers)
+ {
+@@ -264,6 +367,10 @@ static bool axi_dmac_transfer_done(struct axi_dmac_chan *chan,
+ 	if (!active)
+ 		return false;
+ 
++	if (chan->hw_partial_xfer &&
++	    (completed_transfers & AXI_DMAC_FLAG_PARTIAL_XFER_DONE))
++		axi_dmac_dequeue_partial_xfers(chan);
++
+ 	do {
+ 		sg = &active->sg[active->num_completed];
+ 		if (sg->id == AXI_DMAC_SG_UNUSED) /* Not yet submitted */
+@@ -277,10 +384,14 @@ static bool axi_dmac_transfer_done(struct axi_dmac_chan *chan,
+ 			start_next = true;
+ 		}
+ 
++		if (sg->partial_len)
++			axi_dmac_compute_residue(chan, active);
++
+ 		if (active->cyclic)
+ 			vchan_cyclic_callback(&active->vdesc);
+ 
+-		if (active->num_completed == active->num_sgs) {
++		if (active->num_completed == active->num_sgs ||
++		    sg->partial_len) {
+ 			if (active->cyclic) {
+ 				active->num_completed = 0; /* wrap around */
+ 			} else {
+@@ -294,6 +405,40 @@ static bool axi_dmac_transfer_done(struct axi_dmac_chan *chan,
+ 	return start_next;
+ }
+ 
++#ifdef SPEED_TEST
++static s64 get_time(void)
++{
++	struct timespec ts;
++	ktime_get_real_ts(&ts);
++
++	return timespec_to_ns(&ts);
++}
++
++static s64 start;
++static unsigned int count;
++
++static irqreturn_t axi_dmac_interrupt_handler(int irq, void *devid)
++{
++	struct axi_dmac *dmac = devid;
++	unsigned int pending;
++
++	pending = axi_dmac_read(dmac, AXI_DMAC_REG_IRQ_PENDING);
++	axi_dmac_write(dmac, AXI_DMAC_REG_IRQ_PENDING, pending);
++
++	if (pending & 1) {
++		if (count == 0)
++			start = get_time();
++		if (count < 100) {
++			axi_dmac_write(dmac, AXI_DMAC_REG_START_TRANSFER, 1);
++			count += 1;
++		}
++	} else if ((pending & 2) && count == 100) {
++		printk("time: %lld %x\n", get_time() - start, pending);
++	}
++
++	return IRQ_HANDLED;
++}
++#else
+ static irqreturn_t axi_dmac_interrupt_handler(int irq, void *devid)
+ {
+ 	struct axi_dmac *dmac = devid;
+@@ -321,6 +466,7 @@ static irqreturn_t axi_dmac_interrupt_handler(int irq, void *devid)
+ 
+ 	return IRQ_HANDLED;
+ }
++#endif
+ 
+ static int axi_dmac_terminate_all(struct dma_chan *c)
+ {
+@@ -380,6 +526,49 @@ static struct axi_dmac_desc *axi_dmac_alloc_desc(unsigned int num_sgs)
+ 	return desc;
+ }
+ 
++static struct axi_dmac_sg *axi_dmac_fill_linear_sg(struct axi_dmac_chan *chan,
++	enum dma_transfer_direction direction, dma_addr_t addr,
++	unsigned int num_periods, unsigned int period_len,
++	struct axi_dmac_sg *sg)
++{
++	unsigned int num_segments, i;
++	unsigned int segment_size;
++	unsigned int len;
++
++	/* Split into multiple equally sized segments if necessary */
++	num_segments = DIV_ROUND_UP(period_len, chan->max_length);
++	segment_size = DIV_ROUND_UP(period_len, num_segments);
++	/* Take care of alignment */
++	segment_size = ((segment_size - 1) | chan->length_align_mask) + 1;
++
++	for (i = 0; i < num_periods; i++) {
++		len = period_len;
++
++		while (len > segment_size) {
++			if (direction == DMA_DEV_TO_MEM)
++				sg->dest_addr = addr;
++			else
++				sg->src_addr = addr;
++			sg->x_len = segment_size;
++			sg->y_len = 1;
++			sg++;
++			addr += segment_size;
++			len -= segment_size;
++		}
++
++		if (direction == DMA_DEV_TO_MEM)
++			sg->dest_addr = addr;
++		else
++			sg->src_addr = addr;
++		sg->x_len = len;
++		sg->y_len = 1;
++		sg++;
++		addr += len;
++	}
++
++	return sg;
++}
++
+ static struct dma_async_tx_descriptor *axi_dmac_prep_slave_sg(
+ 	struct dma_chan *c, struct scatterlist *sgl,
+ 	unsigned int sg_len, enum dma_transfer_direction direction,
+@@ -387,16 +576,24 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_slave_sg(
+ {
+ 	struct axi_dmac_chan *chan = to_axi_dmac_chan(c);
+ 	struct axi_dmac_desc *desc;
++	struct axi_dmac_sg *dsg;
+ 	struct scatterlist *sg;
++	unsigned int num_sgs;
+ 	unsigned int i;
+ 
+ 	if (direction != chan->direction)
+ 		return NULL;
+ 
+-	desc = axi_dmac_alloc_desc(sg_len);
++	num_sgs = 0;
++	for_each_sg(sgl, sg, sg_len, i)
++		num_sgs += DIV_ROUND_UP(sg_dma_len(sg), chan->max_length);
++
++	desc = axi_dmac_alloc_desc(num_sgs);
+ 	if (!desc)
+ 		return NULL;
+ 
++	dsg = desc->sg;
++
+ 	for_each_sg(sgl, sg, sg_len, i) {
+ 		if (!axi_dmac_check_addr(chan, sg_dma_address(sg)) ||
+ 		    !axi_dmac_check_len(chan, sg_dma_len(sg))) {
+@@ -404,12 +601,8 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_slave_sg(
+ 			return NULL;
+ 		}
+ 
+-		if (direction == DMA_DEV_TO_MEM)
+-			desc->sg[i].dest_addr = sg_dma_address(sg);
+-		else
+-			desc->sg[i].src_addr = sg_dma_address(sg);
+-		desc->sg[i].x_len = sg_dma_len(sg);
+-		desc->sg[i].y_len = 1;
++		dsg = axi_dmac_fill_linear_sg(chan, direction, sg_dma_address(sg), 1,
++			sg_dma_len(sg), dsg);
+ 	}
+ 
+ 	desc->cyclic = false;
+@@ -417,6 +610,21 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_slave_sg(
+ 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
+ }
+ 
++static int axi_dmac_device_config(struct dma_chan *c,
++			struct dma_slave_config *slave_config)
++{
++	struct axi_dmac_chan *chan = to_axi_dmac_chan(c);
++	struct axi_dmac *dmac = chan_to_axi_dmac(chan);
++
++	/* no configuration required, a sanity check is done instead */
++	if (slave_config->direction != chan->direction) {
++		dev_err(dmac->dma_dev.dev, "Direction not supported by this DMA Channel");
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ static struct dma_async_tx_descriptor *axi_dmac_prep_dma_cyclic(
+ 	struct dma_chan *c, dma_addr_t buf_addr, size_t buf_len,
+ 	size_t period_len, enum dma_transfer_direction direction,
+@@ -424,7 +632,7 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_dma_cyclic(
+ {
+ 	struct axi_dmac_chan *chan = to_axi_dmac_chan(c);
+ 	struct axi_dmac_desc *desc;
+-	unsigned int num_periods, i;
++	unsigned int num_periods, num_segments;
+ 
+ 	if (direction != chan->direction)
+ 		return NULL;
+@@ -437,20 +645,14 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_dma_cyclic(
+ 		return NULL;
+ 
+ 	num_periods = buf_len / period_len;
++	num_segments = DIV_ROUND_UP(period_len, chan->max_length);
+ 
+-	desc = axi_dmac_alloc_desc(num_periods);
++	desc = axi_dmac_alloc_desc(num_periods * num_segments);
+ 	if (!desc)
+ 		return NULL;
+ 
+-	for (i = 0; i < num_periods; i++) {
+-		if (direction == DMA_DEV_TO_MEM)
+-			desc->sg[i].dest_addr = buf_addr;
+-		else
+-			desc->sg[i].src_addr = buf_addr;
+-		desc->sg[i].x_len = period_len;
+-		desc->sg[i].y_len = 1;
+-		buf_addr += period_len;
+-	}
++	axi_dmac_fill_linear_sg(chan, direction, buf_addr, num_periods,
++		period_len, desc->sg);
+ 
+ 	desc->cyclic = true;
+ 
+@@ -486,7 +688,7 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_interleaved(
+ 
+ 	if (chan->hw_2d) {
+ 		if (!axi_dmac_check_len(chan, xt->sgl[0].size) ||
+-		    !axi_dmac_check_len(chan, xt->numf))
++		    xt->numf == 0)
+ 			return NULL;
+ 		if (xt->sgl[0].size + dst_icg > chan->max_length ||
+ 		    xt->sgl[0].size + src_icg > chan->max_length)
+@@ -522,6 +724,9 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_interleaved(
+ 		desc->sg[0].y_len = 1;
+ 	}
+ 
++	if (flags & DMA_CYCLIC)
++		desc->cyclic = true;
++
+ 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
+ }
+ 
+@@ -535,6 +740,47 @@ static void axi_dmac_desc_free(struct virt_dma_desc *vdesc)
+ 	kfree(container_of(vdesc, struct axi_dmac_desc, vdesc));
+ }
+ 
++static bool axi_dmac_regmap_rdwr(struct device *dev, unsigned int reg)
++{
++	switch (reg) {
++	case AXI_DMAC_REG_IRQ_MASK:
++	case AXI_DMAC_REG_IRQ_SOURCE:
++	case AXI_DMAC_REG_IRQ_PENDING:
++	case AXI_DMAC_REG_CTRL:
++	case AXI_DMAC_REG_TRANSFER_ID:
++	case AXI_DMAC_REG_START_TRANSFER:
++	case AXI_DMAC_REG_FLAGS:
++	case AXI_DMAC_REG_DEST_ADDRESS:
++	case AXI_DMAC_REG_SRC_ADDRESS:
++	case AXI_DMAC_REG_X_LENGTH:
++	case AXI_DMAC_REG_Y_LENGTH:
++	case AXI_DMAC_REG_DEST_STRIDE:
++	case AXI_DMAC_REG_SRC_STRIDE:
++	case AXI_DMAC_REG_TRANSFER_DONE:
++	case AXI_DMAC_REG_ACTIVE_TRANSFER_ID:
++	case AXI_DMAC_REG_STATUS:
++	case AXI_DMAC_REG_CURRENT_SRC_ADDR:
++	case AXI_DMAC_REG_CURRENT_DEST_ADDR:
++	case AXI_DMAC_REG_DBG0:
++	case AXI_DMAC_REG_DBG1:
++	case AXI_DMAC_REG_DBG2:
++	case AXI_DMAC_REG_PARTIAL_XFER_LEN:
++	case AXI_DMAC_REG_PARTIAL_XFER_ID:
++		return true;
++	default:
++		return false;
++	}
++}
++
++static const struct regmap_config axi_dmac_regmap_config = {
++	.reg_bits = 32,
++	.val_bits = 32,
++	.reg_stride = 4,
++	.max_register = AXI_DMAC_REG_PARTIAL_XFER_ID,
++	.readable_reg = axi_dmac_regmap_rdwr,
++	.writeable_reg = axi_dmac_regmap_rdwr,
++};
++
+ /*
+  * The configuration stored in the devicetree matches the configuration
+  * parameters of the peripheral instance and allows the driver to know which
+@@ -578,16 +824,7 @@ static int axi_dmac_parse_chan_dt(struct device_node *of_chan,
+ 		return ret;
+ 	chan->dest_width = val / 8;
+ 
+-	ret = of_property_read_u32(of_chan, "adi,length-width", &val);
+-	if (ret)
+-		return ret;
+-
+-	if (val >= 32)
+-		chan->max_length = UINT_MAX;
+-	else
+-		chan->max_length = (1ULL << val) - 1;
+-
+-	chan->align_mask = max(chan->dest_width, chan->src_width) - 1;
++	chan->address_align_mask = max(chan->dest_width, chan->src_width) - 1;
+ 
+ 	if (axi_dmac_dest_is_mem(chan) && axi_dmac_src_is_mem(chan))
+ 		chan->direction = DMA_MEM_TO_MEM;
+@@ -598,8 +835,55 @@ static int axi_dmac_parse_chan_dt(struct device_node *of_chan,
+ 	else
+ 		chan->direction = DMA_DEV_TO_DEV;
+ 
+-	chan->hw_cyclic = of_property_read_bool(of_chan, "adi,cyclic");
+-	chan->hw_2d = of_property_read_bool(of_chan, "adi,2d");
++	return 0;
++}
++
++static int axi_dmac_detect_caps(struct axi_dmac *dmac)
++{
++	struct axi_dmac_chan *chan = &dmac->chan;
++	unsigned int version;
++
++	version = axi_dmac_read(dmac, ADI_AXI_REG_VERSION);
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, AXI_DMAC_FLAG_CYCLIC);
++	if (axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS) == AXI_DMAC_FLAG_CYCLIC)
++		chan->hw_cyclic = true;
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_Y_LENGTH, 1);
++	if (axi_dmac_read(dmac, AXI_DMAC_REG_Y_LENGTH) == 1)
++		chan->hw_2d = true;
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_X_LENGTH, 0xffffffff);
++	chan->max_length = axi_dmac_read(dmac, AXI_DMAC_REG_X_LENGTH);
++	if (chan->max_length != UINT_MAX)
++		chan->max_length++;
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_DEST_ADDRESS, 0xffffffff);
++	if (axi_dmac_read(dmac, AXI_DMAC_REG_DEST_ADDRESS) == 0 &&
++	    chan->dest_type == AXI_DMAC_BUS_TYPE_AXI_MM) {
++		dev_err(dmac->dma_dev.dev,
++			"Destination memory-mapped interface not supported.");
++		return -ENODEV;
++	}
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_SRC_ADDRESS, 0xffffffff);
++	if (axi_dmac_read(dmac, AXI_DMAC_REG_SRC_ADDRESS) == 0 &&
++	    chan->src_type == AXI_DMAC_BUS_TYPE_AXI_MM) {
++		dev_err(dmac->dma_dev.dev,
++			"Source memory-mapped interface not supported.");
++		return -ENODEV;
++	}
++
++	if (version >= ADI_AXI_PCORE_VER(4, 2, 'a'))
++		chan->hw_partial_xfer = true;
++
++	if (version >= ADI_AXI_PCORE_VER(4, 1, 'a')) {
++		axi_dmac_write(dmac, AXI_DMAC_REG_X_LENGTH, 0x00);
++		chan->length_align_mask =
++			axi_dmac_read(dmac, AXI_DMAC_REG_X_LENGTH);
++	} else {
++		chan->length_align_mask = chan->address_align_mask;
++	}
+ 
+ 	return 0;
+ }
+@@ -648,15 +932,17 @@ static int axi_dmac_probe(struct platform_device *pdev)
+ 	of_node_put(of_channels);
+ 
+ 	pdev->dev.dma_parms = &dmac->dma_parms;
+-	dma_set_max_seg_size(&pdev->dev, dmac->chan.max_length);
++	dma_set_max_seg_size(&pdev->dev, UINT_MAX);
+ 
+ 	dma_dev = &dmac->dma_dev;
+ 	dma_cap_set(DMA_SLAVE, dma_dev->cap_mask);
+ 	dma_cap_set(DMA_CYCLIC, dma_dev->cap_mask);
++	dma_cap_set(DMA_INTERLEAVE, dma_dev->cap_mask);
+ 	dma_dev->device_free_chan_resources = axi_dmac_free_chan_resources;
+ 	dma_dev->device_tx_status = dma_cookie_status;
+ 	dma_dev->device_issue_pending = axi_dmac_issue_pending;
+ 	dma_dev->device_prep_slave_sg = axi_dmac_prep_slave_sg;
++	dma_dev->device_config = axi_dmac_device_config;
+ 	dma_dev->device_prep_dma_cyclic = axi_dmac_prep_dma_cyclic;
+ 	dma_dev->device_prep_interleaved_dma = axi_dmac_prep_interleaved;
+ 	dma_dev->device_terminate_all = axi_dmac_terminate_all;
+@@ -676,6 +962,12 @@ static int axi_dmac_probe(struct platform_device *pdev)
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = axi_dmac_detect_caps(dmac);
++	if (ret)
++		goto err_clk_disable;
++
++	dma_dev->copy_align = (dmac->chan.address_align_mask + 1);
++
+ 	axi_dmac_write(dmac, AXI_DMAC_REG_IRQ_MASK, 0x00);
+ 
+ 	ret = dma_async_device_register(dma_dev);
+@@ -694,6 +986,35 @@ static int axi_dmac_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, dmac);
+ 
++	devm_regmap_init_mmio(&pdev->dev, dmac->base, &axi_dmac_regmap_config);
++
++#ifdef SPEED_TEST
++	for (i = 0; i < 0x30; i += 4)
++		printk("reg %x: %x\n", i, axi_dmac_read(dmac, i));
++	dmac->test_virt = dma_alloc_coherent(&pdev->dev, SZ_8M,
++			&dmac->test_phys, GFP_KERNEL);
++
++	axi_dmac_write(dmac, AXI_DMAC_REG_CTRL, AXI_DMAC_CTRL_ENABLE);
++	axi_dmac_write(dmac, AXI_DMAC_REG_DMA_ADDRESS, dmac->test_phys);
++	axi_dmac_write(dmac, AXI_DMAC_REG_DMA_COUNT, SZ_8M);
++
++	printk("Check registers\n");
++	printk("CTRL: %x %x\n", AXI_DMAC_CTRL_ENABLE, axi_dmac_read(dmac, AXI_DMAC_REG_CTRL));
++	printk("ADDR: %x %x\n", dmac->test_phys, axi_dmac_read(dmac, AXI_DMAC_REG_DMA_ADDRESS));
++	printk("COUNT: %x %x\n", PAGE_SIZE, axi_dmac_read(dmac, AXI_DMAC_REG_DMA_COUNT));
++	printk("MASK: %x %x\n", 0, axi_dmac_read(dmac, AXI_DMAC_REG_IRQ_MASK));
++
++	printk("Start transfer\n");
++	axi_dmac_write(dmac, AXI_DMAC_REG_START_TRANSFER, 1);
++	printk("START: %x %x\n", 1, axi_dmac_read(dmac, AXI_DMAC_REG_START_TRANSFER));
++
++	for (i = 0; i < 0x100; i++)
++		printk("%.8x%c", ((unsigned long *)dmac->test_virt)[i],
++			i % 16 == 15 ? '\n' : ' ');
++	printk("Last: %x\n", ((unsigned long *)dmac->test_virt)[PAGE_SIZE/4-1]);
++	printk("PROGRESS: %x %x\n", 1, axi_dmac_read(dmac, AXI_DMAC_REG_DMA_COUNT_PROGRESS));
++#endif
++
+ 	return 0;
+ 
+ err_unregister_of:
+diff --git a/drivers/dma/virt-dma.c b/drivers/dma/virt-dma.c
+index 88ad8ed2a8d6..bf560a20c8a8 100644
+--- a/drivers/dma/virt-dma.c
++++ b/drivers/dma/virt-dma.c
+@@ -101,7 +101,7 @@ static void vchan_complete(unsigned long arg)
+ 	}
+ 	spin_unlock_irq(&vc->lock);
+ 
+-	dmaengine_desc_callback_invoke(&cb, NULL);
++	dmaengine_desc_callback_invoke(&cb, &vd->tx_result);
+ 
+ 	list_for_each_entry_safe(vd, _vd, &head, node) {
+ 		dmaengine_desc_get_callback(&vd->tx, &cb);
+@@ -109,7 +109,7 @@ static void vchan_complete(unsigned long arg)
+ 		list_del(&vd->node);
+ 		vchan_vdesc_fini(vd);
+ 
+-		dmaengine_desc_callback_invoke(&cb, NULL);
++		dmaengine_desc_callback_invoke(&cb, &vd->tx_result);
+ 	}
+ }
+ 
+diff --git a/drivers/dma/virt-dma.h b/drivers/dma/virt-dma.h
+index b09b75ab0751..eb767c583b7e 100644
+--- a/drivers/dma/virt-dma.h
++++ b/drivers/dma/virt-dma.h
+@@ -17,6 +17,7 @@
+ 
+ struct virt_dma_desc {
+ 	struct dma_async_tx_descriptor tx;
++	struct dmaengine_result tx_result;
+ 	/* protected by vc.lock */
+ 	struct list_head node;
+ };
+@@ -65,6 +66,9 @@ static inline struct dma_async_tx_descriptor *vchan_tx_prep(struct virt_dma_chan
+ 	vd->tx.tx_submit = vchan_tx_submit;
+ 	vd->tx.desc_free = vchan_tx_desc_free;
+ 
++	vd->tx_result.result = DMA_TRANS_NOERROR;
++	vd->tx_result.residue = 0;
++
+ 	spin_lock_irqsave(&vc->lock, flags);
+ 	list_add_tail(&vd->node, &vc->desc_allocated);
+ 	spin_unlock_irqrestore(&vc->lock, flags);
+diff --git a/drivers/gpu/drm/Kconfig b/drivers/gpu/drm/Kconfig
+index 7bbcbcb6ab64..c9395cac6f70 100644
+--- a/drivers/gpu/drm/Kconfig
++++ b/drivers/gpu/drm/Kconfig
+@@ -215,6 +215,8 @@ source "drivers/gpu/drm/nouveau/Kconfig"
+ 
+ source "drivers/gpu/drm/i915/Kconfig"
+ 
++source "drivers/gpu/drm/adi_axi_hdmi/Kconfig"
++
+ config DRM_VGEM
+ 	tristate "Virtual GEM provider"
+ 	depends on DRM
+diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
+index 4c19bc101906..201347ec65eb 100644
+--- a/drivers/gpu/drm/Makefile
++++ b/drivers/gpu/drm/Makefile
+@@ -81,6 +81,7 @@ obj-$(CONFIG_DRM_ARMADA) += armada/
+ obj-$(CONFIG_DRM_ATMEL_HLCDC)	+= atmel-hlcdc/
+ obj-$(CONFIG_DRM_RCAR_DU) += rcar-du/
+ obj-$(CONFIG_DRM_SHMOBILE) +=shmobile/
++obj-$(CONFIG_DRM_ADI_AXI_HDMI) += adi_axi_hdmi/
+ obj-y			+= omapdrm/
+ obj-$(CONFIG_DRM_SUN4I) += sun4i/
+ obj-y			+= tilcdc/
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/Kconfig b/drivers/gpu/drm/adi_axi_hdmi/Kconfig
+new file mode 100644
+index 000000000000..4f2d9713046c
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/Kconfig
+@@ -0,0 +1,8 @@
++config DRM_ADI_AXI_HDMI
++	tristate "DRM Support for Analog Devices HDMI FPGA platforms"
++	depends on DRM
++	default	n
++	select DRM_KMS_HELPER
++	select DRM_KMS_CMA_HELPER
++	select XILINX_VDMA
++	select VT_HW_CONSOLE_BINDING if FRAMEBUFFER_CONSOLE
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/Makefile b/drivers/gpu/drm/adi_axi_hdmi/Makefile
+new file mode 100644
+index 000000000000..5a889bde3974
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/Makefile
+@@ -0,0 +1,7 @@
++#
++# Makefile for the drm device driver.  This driver provides support for the
++# Direct Rendering Infrastructure (DRI) in XFree86 4.1.0 and higher.
++
++adi_axi_hdmi-y := axi_hdmi_encoder.o axi_hdmi_crtc.o axi_hdmi_drv.o
++
++obj-$(CONFIG_DRM_ADI_AXI_HDMI) += adi_axi_hdmi.o
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_crtc.c b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_crtc.c
+new file mode 100644
+index 000000000000..313f054a6f9d
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_crtc.c
+@@ -0,0 +1,248 @@
++/*
++ * Analog Devices AXI HDMI DRM driver.
++ *
++ * Copyright 2012 Analog Devices Inc.
++ *  Author: Lars-Peter Clausen <lars@metafoo.de>
++ *
++ * Licensed under the GPL-2.
++ */
++
++#include <linux/slab.h>
++#include <linux/dmaengine.h>
++#include <linux/dma/xilinx_dma.h>
++
++#include <drm/drm_atomic_helper.h>
++#include <drm/drm_crtc_helper.h>
++#include <drm/drm_gem_cma_helper.h>
++#include <drm/drm_plane_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
++
++#include "axi_hdmi_drv.h"
++
++struct axi_hdmi_crtc {
++	struct drm_crtc drm_crtc;
++	struct drm_plane plane;
++
++	struct dma_chan *dma;
++	struct dma_interleaved_template *dma_template;
++};
++
++static struct axi_hdmi_crtc *plane_to_axi_hdmi_crtc(struct drm_plane *plane)
++{
++	return container_of(plane, struct axi_hdmi_crtc, plane);
++}
++
++static struct axi_hdmi_crtc *to_axi_hdmi_crtc(struct drm_crtc *crtc)
++{
++	return container_of(crtc, struct axi_hdmi_crtc, drm_crtc);
++}
++
++static struct dma_async_tx_descriptor *axi_hdmi_vdma_prep_interleaved_desc(
++	struct drm_plane *plane)
++{
++	struct axi_hdmi_crtc *axi_hdmi_crtc = plane_to_axi_hdmi_crtc(plane);
++	struct drm_framebuffer *fb = plane->state->fb;
++	size_t offset, hw_row_size;
++	struct drm_gem_cma_object *obj;
++
++#if IS_ENABLED(CONFIG_XILINX_DMA)
++	struct xilinx_vdma_config vdma_config;
++
++	if (!strncmp(axi_hdmi_crtc->dma->device->dev->driver->name, "xilinx-vdma", 11)) {
++		memset(&vdma_config, 0, sizeof(vdma_config));
++		vdma_config.park = 1;
++		vdma_config.coalesc = 0xff;
++		xilinx_vdma_channel_set_config(axi_hdmi_crtc->dma, &vdma_config);
++	}
++#endif
++
++	obj = drm_fb_cma_get_gem_obj(plane->state->fb, 0);
++
++	offset = plane->state->crtc_x * fb->format->cpp[0] +
++		plane->state->crtc_y * fb->pitches[0];
++
++	/* Interleaved DMA is used that way:
++	 * Each interleaved frame is a row (hsize) implemented in ONE
++	 * chunk (sgl has len 1).
++	 * The number of interleaved frames is the number of rows (vsize).
++	 * The icg in used to pack data to the HW, so that the buffer len
++	 * is fb->piches[0], but the actual size for the hw is somewhat less
++	 */
++	axi_hdmi_crtc->dma_template->dir = DMA_MEM_TO_DEV;
++	axi_hdmi_crtc->dma_template->src_start = obj->paddr + offset;
++	/* sgl list have just one entry (each interleaved frame have 1 chunk) */
++	axi_hdmi_crtc->dma_template->frame_size = 1;
++	/* the number of interleaved frame, each has the size specified in sgl */
++	axi_hdmi_crtc->dma_template->numf = plane->state->crtc_h;
++	axi_hdmi_crtc->dma_template->src_sgl = 1;
++	axi_hdmi_crtc->dma_template->src_inc = 1;
++
++	/* vdma IP does not provide any addr to the hdmi IP, so dst_inc
++	 * and dst_sgl should make no any difference.
++	 */
++	axi_hdmi_crtc->dma_template->dst_inc = 0;
++	axi_hdmi_crtc->dma_template->dst_sgl = 0;
++
++	hw_row_size = plane->state->crtc_w * fb->format->cpp[0];
++	axi_hdmi_crtc->dma_template->sgl[0].size = hw_row_size;
++
++	/* the vdma driver seems to look at icg, and not src_icg */
++	axi_hdmi_crtc->dma_template->sgl[0].icg =
++		fb->pitches[0] - hw_row_size;
++
++	return dmaengine_prep_interleaved_dma(axi_hdmi_crtc->dma,
++				axi_hdmi_crtc->dma_template, DMA_CYCLIC);
++}
++
++static void axi_hdmi_plane_atomic_update(struct drm_plane *plane,
++	struct drm_plane_state *old_state)
++{
++	struct axi_hdmi_crtc *axi_hdmi_crtc = plane_to_axi_hdmi_crtc(plane);
++	struct dma_async_tx_descriptor *desc;
++
++	if (!plane->state->crtc || !plane->state->fb)
++		return;
++
++	dmaengine_terminate_all(axi_hdmi_crtc->dma);
++
++	desc = axi_hdmi_vdma_prep_interleaved_desc(plane);
++	if (!desc) {
++		pr_err("Failed to prepare DMA descriptor\n");
++		return;
++	}
++
++	dmaengine_submit(desc);
++	dma_async_issue_pending(axi_hdmi_crtc->dma);
++}
++
++static void axi_hdmi_crtc_enable(struct drm_crtc *crtc,
++				 struct drm_crtc_state *old_state)
++{
++}
++
++static void axi_hdmi_crtc_disable(struct drm_crtc *crtc,
++				  struct drm_crtc_state *old_state)
++{
++	struct axi_hdmi_crtc *axi_hdmi_crtc = to_axi_hdmi_crtc(crtc);
++
++	dmaengine_terminate_all(axi_hdmi_crtc->dma);
++}
++
++static void axi_hdmi_crtc_atomic_begin(struct drm_crtc *crtc,
++	struct drm_crtc_state *state)
++{
++	struct drm_pending_vblank_event *event = crtc->state->event;
++
++	if (event) {
++		crtc->state->event = NULL;
++
++		spin_lock_irq(&crtc->dev->event_lock);
++		drm_crtc_send_vblank_event(crtc, event);
++		spin_unlock_irq(&crtc->dev->event_lock);
++	}
++}
++
++static const struct drm_crtc_helper_funcs axi_hdmi_crtc_helper_funcs = {
++	.atomic_enable = axi_hdmi_crtc_enable,
++	.atomic_disable = axi_hdmi_crtc_disable,
++	.atomic_begin = axi_hdmi_crtc_atomic_begin,
++};
++
++static void axi_hdmi_crtc_destroy(struct drm_crtc *crtc)
++{
++	struct axi_hdmi_crtc *axi_hdmi_crtc = to_axi_hdmi_crtc(crtc);
++
++	drm_crtc_cleanup(crtc);
++	kfree(axi_hdmi_crtc->dma_template);
++	kfree(axi_hdmi_crtc);
++}
++
++static const struct drm_crtc_funcs axi_hdmi_crtc_funcs = {
++	.destroy = axi_hdmi_crtc_destroy,
++	.set_config = drm_atomic_helper_set_config,
++	.page_flip = drm_atomic_helper_page_flip,
++	.reset = drm_atomic_helper_crtc_reset,
++	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
++	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
++};
++
++static const struct drm_plane_helper_funcs axi_hdmi_plane_helper_funcs = {
++	.atomic_update = axi_hdmi_plane_atomic_update,
++};
++
++static void axi_hdmi_plane_destroy(struct drm_plane *plane)
++{
++	drm_plane_helper_disable(plane, NULL);
++	drm_plane_cleanup(plane);
++}
++
++static const struct drm_plane_funcs axi_hdmi_plane_funcs = {
++	.update_plane = drm_atomic_helper_update_plane,
++	.disable_plane = drm_atomic_helper_disable_plane,
++	.destroy = axi_hdmi_plane_destroy,
++	.reset = drm_atomic_helper_plane_reset,
++	.atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
++	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
++};
++
++static const u32 axi_hdmi_supported_formats[] = {
++	DRM_FORMAT_XRGB8888,
++};
++
++struct drm_crtc *axi_hdmi_crtc_create(struct drm_device *dev)
++{
++	struct axi_hdmi_private *p = dev->dev_private;
++	struct axi_hdmi_crtc *axi_hdmi_crtc;
++	struct drm_crtc *crtc;
++	struct drm_plane *plane;
++	int ret;
++
++	if (!dma_has_cap(DMA_INTERLEAVE, p->dma->device->cap_mask)) {
++		DRM_ERROR("DMA needs to support interleaved transfers\n");
++		return ERR_PTR(-EINVAL);
++	}
++
++	axi_hdmi_crtc = kzalloc(sizeof(*axi_hdmi_crtc), GFP_KERNEL);
++	if (!axi_hdmi_crtc)
++		return ERR_PTR(-ENOMEM);
++
++	crtc = &axi_hdmi_crtc->drm_crtc;
++	plane = &axi_hdmi_crtc->plane;
++
++	/* we know we'll always use only one data chunk */
++	axi_hdmi_crtc->dma_template = kzalloc(
++		sizeof(struct dma_interleaved_template) +
++		sizeof(struct data_chunk), GFP_KERNEL);
++	if (!axi_hdmi_crtc->dma_template) {
++		ret = -ENOMEM;
++		goto err_free_crtc;
++	}
++
++	ret = drm_universal_plane_init(dev, plane, 0xff, &axi_hdmi_plane_funcs,
++		axi_hdmi_supported_formats,
++		ARRAY_SIZE(axi_hdmi_supported_formats), NULL,
++		DRM_PLANE_TYPE_PRIMARY, NULL);
++	if (ret)
++		goto err_free_dma_template;
++
++	drm_plane_helper_add(plane, &axi_hdmi_plane_helper_funcs);
++
++	axi_hdmi_crtc->dma = p->dma;
++
++	ret = drm_crtc_init_with_planes(dev, crtc, plane, NULL,
++		&axi_hdmi_crtc_funcs, NULL);
++	if (ret)
++		goto err_plane_destroy;
++	drm_crtc_helper_add(crtc, &axi_hdmi_crtc_helper_funcs);
++
++	return crtc;
++
++err_plane_destroy:
++	axi_hdmi_plane_destroy(plane);
++err_free_dma_template:
++	kfree(axi_hdmi_crtc->dma_template);
++err_free_crtc:
++	kfree(axi_hdmi_crtc);
++
++	return ERR_PTR(ret);
++}
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.c b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.c
+new file mode 100644
+index 000000000000..5d90d7c0e98a
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.c
+@@ -0,0 +1,231 @@
++/*
++ * Analog Devices AXI HDMI DRM driver.
++ *
++ * Copyright 2012 Analog Devices Inc.
++ *  Author: Lars-Peter Clausen <lars@metafoo.de>
++ *
++ * Licensed under the GPL-2.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++#include <linux/i2c.h>
++#include <linux/of_address.h>
++#include <linux/of_dma.h>
++#include <linux/of_graph.h>
++#include <linux/clk.h>
++
++#include <drm/drmP.h>
++#include <drm/drm.h>
++#include <drm/drm_crtc_helper.h>
++#include <drm/drm_gem_cma_helper.h>
++#include <drm/drm_atomic_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
++#include <drm/drm_fb_helper.h>
++
++#include "axi_hdmi_drv.h"
++
++#define DRIVER_NAME	"axi_hdmi_drm"
++#define DRIVER_DESC	"AXI HDMI DRM"
++#define DRIVER_DATE	"20120930"
++#define DRIVER_MAJOR	1
++#define DRIVER_MINOR	0
++
++static struct drm_mode_config_funcs axi_hdmi_mode_config_funcs = {
++	.fb_create = drm_gem_fb_create,
++	.output_poll_changed = drm_fb_helper_output_poll_changed,
++	.atomic_check = drm_atomic_helper_check,
++	.atomic_commit = drm_atomic_helper_commit,
++};
++
++static void axi_hdmi_mode_config_init(struct drm_device *dev)
++{
++	drm_mode_config_init(dev);
++
++	dev->mode_config.min_width = 0;
++	dev->mode_config.min_height = 0;
++
++	dev->mode_config.max_width = 4096;
++	dev->mode_config.max_height = 4096;
++
++	dev->mode_config.funcs = &axi_hdmi_mode_config_funcs;
++}
++
++static int axi_hdmi_init(struct drm_driver *ddrv, struct device *dev)
++{
++	struct axi_hdmi_private *private = dev_get_drvdata(dev);
++	struct drm_device *ddev;
++	struct drm_encoder *encoder;
++	int ret;
++
++	ddev = drm_dev_alloc(ddrv, dev);
++	if (IS_ERR(ddev))
++		return PTR_ERR(ddev);
++
++	private->drm_dev = ddev;
++
++	ddev->dev_private = private;
++
++	axi_hdmi_mode_config_init(ddev);
++
++	private->crtc = axi_hdmi_crtc_create(ddev);
++	if (IS_ERR(private->crtc)) {
++		ret = PTR_ERR(private->crtc);
++		goto err_crtc;
++	}
++
++	encoder = axi_hdmi_encoder_create(ddev);
++	if (IS_ERR(encoder)) {
++	    ret = PTR_ERR(encoder);
++	    goto err_crtc;
++	}
++
++	drm_mode_config_reset(ddev);
++
++	ret = drm_fb_cma_fbdev_init(ddev, 32, 1);
++	if (ret) {
++		DRM_ERROR("failed to initialize drm fbdev: %d\n", ret);
++		goto err_crtc;
++	}
++
++	/* init kms poll for handling hpd */
++	drm_kms_helper_poll_init(ddev);
++
++	return drm_dev_register(ddev, 0);
++
++err_crtc:
++	drm_mode_config_cleanup(ddev);
++	drm_dev_unref(ddev);
++
++	return ret;
++}
++
++static void axi_hdmi_unload(struct drm_device *dev)
++{
++	drm_fb_cma_fbdev_fini(dev);
++	drm_kms_helper_poll_fini(dev);
++	drm_mode_config_cleanup(dev);
++}
++
++static const struct file_operations axi_hdmi_driver_fops = {
++	.owner		= THIS_MODULE,
++	.open		= drm_open,
++	.mmap		= drm_gem_cma_mmap,
++	.poll		= drm_poll,
++	.read		= drm_read,
++	.unlocked_ioctl	= drm_ioctl,
++	.release	= drm_release,
++};
++
++static struct drm_driver axi_hdmi_driver = {
++	.driver_features	= DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
++	.unload			= axi_hdmi_unload,
++	.lastclose		= drm_fb_helper_lastclose,
++	.gem_free_object	= drm_gem_cma_free_object,
++	.gem_vm_ops		= &drm_gem_cma_vm_ops,
++	.dumb_create		= drm_gem_cma_dumb_create,
++	.gem_prime_vmap		= drm_gem_cma_prime_vmap,
++	.fops			= &axi_hdmi_driver_fops,
++	.name			= DRIVER_NAME,
++	.desc			= DRIVER_DESC,
++	.date			= DRIVER_DATE,
++	.major			= DRIVER_MAJOR,
++	.minor			= DRIVER_MINOR,
++};
++
++static const struct of_device_id adv7511_encoder_of_match[] = {
++	{
++		.compatible = "adi,axi-hdmi-tx-1.00.a",
++	},
++	{},
++};
++MODULE_DEVICE_TABLE(of, adv7511_encoder_of_match);
++
++static int axi_hdmi_platform_probe(struct platform_device *pdev)
++{
++	const struct of_device_id *id;
++	struct device_node *np = pdev->dev.of_node;
++	struct axi_hdmi_private *private;
++	struct device_node *slave_node, *ep_node;
++	struct of_endpoint ep;
++	struct resource *res;
++	int ret;
++
++	private = devm_kzalloc(&pdev->dev, sizeof(*private), GFP_KERNEL);
++	if (!private)
++		return -ENOMEM;
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	private->base = devm_ioremap_resource(&pdev->dev, res);
++	if (IS_ERR(private->base))
++		return PTR_ERR(private->base);
++
++	private->hdmi_clock = devm_clk_get(&pdev->dev, NULL);
++	if (IS_ERR(private->hdmi_clock)) {
++		return -EPROBE_DEFER;
++	}
++
++	ep_node = of_graph_get_next_endpoint(np, NULL);
++	if (ep_node) {
++		ret = of_graph_parse_endpoint(ep_node, &ep);
++		if (ret) {
++			of_node_put(ep_node);
++			return ret;
++		}
++		if (ep.port != 0 && ep.id != 0) {
++			of_node_put(ep_node);
++			return -EINVAL;
++		}
++		slave_node = of_graph_get_remote_port_parent(ep_node);
++		of_node_put(ep_node);
++	} else {
++		slave_node = of_parse_phandle(np, "encoder-slave", 0);
++	}
++
++	if (!slave_node)
++		return -EINVAL;
++
++	private->is_rgb = of_property_read_bool(np, "adi,is-rgb");
++
++	id = of_match_node(adv7511_encoder_of_match, np);
++
++	private->encoder_slave = of_find_i2c_device_by_node(slave_node);
++	of_node_put(slave_node);
++
++	if (!private->encoder_slave || !private->encoder_slave->dev.driver)
++		return -EPROBE_DEFER;
++
++	private->dma = dma_request_slave_channel(&pdev->dev, "video");
++	if (private->dma == NULL)
++		return -EPROBE_DEFER;
++
++	platform_set_drvdata(pdev, private);
++
++	return axi_hdmi_init(&axi_hdmi_driver, &pdev->dev);
++}
++
++static int axi_hdmi_platform_remove(struct platform_device *pdev)
++{
++	struct axi_hdmi_private *private = platform_get_drvdata(pdev);
++
++	drm_put_dev(private->drm_dev);
++	dma_release_channel(private->dma);
++	return 0;
++}
++
++static struct platform_driver adv7511_encoder_driver = {
++	.driver = {
++		.name = "axi-hdmi",
++		.owner = THIS_MODULE,
++		.of_match_table = adv7511_encoder_of_match,
++	},
++	.probe = axi_hdmi_platform_probe,
++	.remove = axi_hdmi_platform_remove,
++};
++module_platform_driver(adv7511_encoder_driver);
++
++MODULE_LICENSE("GPL v2");
++MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
++MODULE_DESCRIPTION("");
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.h b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.h
+new file mode 100644
+index 000000000000..eea98d8cdc72
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_drv.h
+@@ -0,0 +1,44 @@
++/*
++ * Analog Devices AXI HDMI DRM driver.
++ *
++ * Copyright 2012 Analog Devices Inc.
++ *  Author: Lars-Peter Clausen <lars@metafoo.de>
++ *
++ * Licensed under the GPL-2.
++ */
++
++#ifndef _AXI_HDMI_DRV_H_
++#define _AXI_HDMI_DRV_H_
++
++#include <drm/drm.h>
++#include <drm/drm_fb_cma_helper.h>
++#include <linux/of.h>
++#include <linux/clk.h>
++
++struct xlnx_pcm_dma_params {
++	struct device_node *of_node;
++	int chan_id;
++};
++
++struct axi_hdmi_encoder;
++
++struct axi_hdmi_private {
++	struct drm_device *drm_dev;
++	struct drm_crtc *crtc;
++	struct axi_hdmi_encoder *encoder;
++	struct i2c_client *encoder_slave;
++
++	void __iomem *base;
++
++	struct clk *hdmi_clock;
++	bool clk_enabled;
++
++	struct dma_chan *dma;
++
++	bool is_rgb;
++};
++
++struct drm_crtc* axi_hdmi_crtc_create(struct drm_device *dev);
++struct drm_encoder *axi_hdmi_encoder_create(struct drm_device *dev);
++
++#endif
+diff --git a/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_encoder.c b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_encoder.c
+new file mode 100644
+index 000000000000..34d9374f5c42
+--- /dev/null
++++ b/drivers/gpu/drm/adi_axi_hdmi/axi_hdmi_encoder.c
+@@ -0,0 +1,522 @@
++/*
++ * Analog Devices AXI HDMI DRM driver.
++ *
++ * Copyright 2012 Analog Devices Inc.
++ *  Author: Lars-Peter Clausen <lars@metafoo.de>
++ *
++ * Licensed under the GPL-2.
++ */
++
++#include <linux/io.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/debugfs.h>
++#include <linux/clk.h>
++
++#include <drm/drm_atomic_helper.h>
++#include <drm/drm_crtc_helper.h>
++#include <drm/drm_encoder_slave.h>
++#include <drm/drm_edid.h>
++
++#include "axi_hdmi_drv.h"
++
++#include "../i2c/adv7511.h"
++
++#define AXI_HDMI_STATUS_VMDA_UNDERFLOW	BIT(4)
++#define AXI_HDMI_STATUS_VMDA_OVERFLOW	BIT(3)
++#define AXI_HDMI_STATUS_VMDA_BE_ERROR	BIT(2)
++#define AXI_HDMI_STATUS_VMDA_TPM_OOS	BIT(1)
++#define AXI_HDMI_STATUS_HDMI_TPM_OOS	BIT(0)
++
++#define AXI_HDMI_COLOR_PATTERN_ENABLE	BIT(24)
++
++#define AXI_HDMI_REG_RESET		0x040
++#define AXI_HDMI_REG_CTRL		0x044
++#define AXI_HDMI_REG_SOURCE_SEL		0x048
++#define AXI_HDMI_REG_COLORPATTERN	0x04c
++#define AXI_HDMI_REG_STATUS		0x05c
++#define AXI_HDMI_REG_VDMA_STATUS	0x060
++#define AXI_HDMI_REG_TPM_STATUS		0x064
++#define AXI_HDMI_REG_CLIPP_MAX  	0x068
++#define AXI_HDMI_REG_CLIPP_MIN  	0x06c
++#define AXI_HDMI_REG_HTIMING1		0x400
++#define AXI_HDMI_REG_HTIMING2		0x404
++#define AXI_HDMI_REG_HTIMING3		0x408
++#define AXI_HDMI_REG_VTIMING1		0x440
++#define AXI_HDMI_REG_VTIMING2		0x444
++#define AXI_HDMI_REG_VTIMING3		0x448
++
++#define AXI_HDMI_RESET_ENABLE		BIT(0)
++
++#define AXI_HDMI_CTRL_SS_BYPASS		BIT(2)
++#define AXI_HDMI_CTRL_FULL_RANGE	BIT(1)
++#define AXI_HDMI_CTRL_CSC_BYPASS	BIT(0)
++
++#define AXI_HDMI_SOURCE_SEL_COLORPATTERN	0x3
++#define AXI_HDMI_SOURCE_SEL_TESTPATTERN		0x2
++#define AXI_HDMI_SOURCE_SEL_NORMAL		0x1
++#define AXI_HDMI_SOURCE_SEL_NONE		0x0
++
++static const struct debugfs_reg32 axi_hdmi_encoder_debugfs_regs[] = {
++	{ "Reset", AXI_HDMI_REG_RESET },
++	{ "Control", AXI_HDMI_REG_CTRL },
++	{ "Source select", AXI_HDMI_REG_SOURCE_SEL },
++	{ "Colorpattern", AXI_HDMI_REG_COLORPATTERN },
++	{ "Status", AXI_HDMI_REG_STATUS },
++	{ "VDMA status", AXI_HDMI_REG_VDMA_STATUS },
++	{ "TPM status", AXI_HDMI_REG_TPM_STATUS },
++	{ "HTiming1", AXI_HDMI_REG_HTIMING1 },
++	{ "HTiming2", AXI_HDMI_REG_HTIMING2 },
++	{ "HTiming3", AXI_HDMI_REG_HTIMING3 },
++	{ "VTiming1", AXI_HDMI_REG_VTIMING1 },
++	{ "VTiming2", AXI_HDMI_REG_VTIMING2 },
++	{ "VTiming3", AXI_HDMI_REG_VTIMING3 },
++};
++
++static const uint16_t adv7511_csc_ycbcr_to_rgb[] = {
++	0x0734, 0x04ad, 0x0000, 0x1c1b,
++	0x1ddc, 0x04ad, 0x1f24, 0x0135,
++	0x0000, 0x04ad, 0x087c, 0x1b77,
++};
++
++struct axi_hdmi_encoder {
++	struct drm_encoder_slave encoder;
++	struct drm_connector connector;
++
++#ifdef CONFIG_DEBUG_FS
++	struct debugfs_regset32 regset;
++#endif
++};
++
++static inline struct axi_hdmi_encoder *to_axi_hdmi_encoder(struct drm_encoder *enc)
++{
++	return container_of(enc, struct axi_hdmi_encoder, encoder.base);
++}
++
++static inline struct drm_encoder *connector_to_encoder(struct drm_connector *connector)
++{
++	struct axi_hdmi_encoder *enc = container_of(connector, struct axi_hdmi_encoder, connector);
++	return &enc->encoder.base;
++}
++
++static int axi_hdmi_connector_init(struct drm_device *dev,
++	struct drm_connector *connector, struct drm_encoder *encoder);
++
++static const struct drm_encoder_slave_funcs *get_slave_funcs(
++	struct drm_encoder *enc)
++{
++	if (enc->bridge)
++		return NULL;
++
++	return to_encoder_slave(enc)->slave_funcs;
++}
++
++static void axi_hdmi_set_color_range(struct axi_hdmi_private *private,
++	unsigned int low, unsigned int high)
++{
++	writel(high, private->base + AXI_HDMI_REG_CLIPP_MAX);
++	writel(low, private->base + AXI_HDMI_REG_CLIPP_MIN);
++}
++
++#ifdef CONFIG_DEBUG_FS
++
++static int axi_hdmi_debugfs_cp_get(void *data, u64 *val)
++{
++	struct axi_hdmi_private *private = data;
++	*val = readl(private->base + AXI_HDMI_REG_COLORPATTERN);
++	return 0;
++}
++
++static int axi_hdmi_debugfs_cp_set(void *data, u64 val)
++{
++	struct axi_hdmi_private *private = data;
++
++	writel(val, private->base + AXI_HDMI_REG_COLORPATTERN);
++
++	return 0;
++}
++DEFINE_SIMPLE_ATTRIBUTE(axi_hdmi_cp_fops, axi_hdmi_debugfs_cp_get,
++	axi_hdmi_debugfs_cp_set, "0x%06llx\n");
++
++static const char * const axi_hdmi_mode_text[] = {
++	[AXI_HDMI_SOURCE_SEL_NONE] = "none",
++	[AXI_HDMI_SOURCE_SEL_NORMAL] = "normal",
++	[AXI_HDMI_SOURCE_SEL_TESTPATTERN] = "testpattern",
++	[AXI_HDMI_SOURCE_SEL_COLORPATTERN] = "colorpattern",
++};
++
++static ssize_t axi_hdmi_read_mode(struct file *file, char __user *userbuf,
++	size_t count, loff_t *ppos)
++{
++	struct axi_hdmi_private *private = file->private_data;
++	uint32_t src;
++	const char *fmt;
++	size_t len = 0;
++	char buf[50];
++	int i;
++
++	src = readl(private->base + AXI_HDMI_REG_SOURCE_SEL);
++
++	for (i = 0; i < ARRAY_SIZE(axi_hdmi_mode_text); i++) {
++		if (src == i)
++			fmt = "[%s] ";
++		else
++			fmt = "%s ";
++		len += scnprintf(buf + len, sizeof(buf) - len, fmt,
++				axi_hdmi_mode_text[i]);
++	}
++
++	buf[len - 1] = '\n';
++
++	return simple_read_from_buffer(userbuf, count, ppos, buf, len);
++}
++
++static ssize_t axi_hdmi_set_mode(struct file *file, const char __user *userbuf,
++	size_t count, loff_t *ppos)
++{
++	struct axi_hdmi_private *private = file->private_data;
++	char buf[20];
++	unsigned int ctrl;
++	unsigned int i;
++
++	count = min_t(size_t, count, sizeof(buf) - 1);
++	if (copy_from_user(buf, userbuf, count))
++		return -EFAULT;
++
++	buf[count] = '\0';
++
++	for (i = 0; i < ARRAY_SIZE(axi_hdmi_mode_text); i++) {
++		if (sysfs_streq(axi_hdmi_mode_text[i], buf))
++			break;
++	}
++
++	if (i == ARRAY_SIZE(axi_hdmi_mode_text))
++		return -EINVAL;
++
++	writel(i, private->base + AXI_HDMI_REG_SOURCE_SEL);
++
++	if (i == AXI_HDMI_SOURCE_SEL_TESTPATTERN) {
++		axi_hdmi_set_color_range(private, 0, 0xffffff);
++		ctrl = AXI_HDMI_CTRL_CSC_BYPASS | AXI_HDMI_CTRL_SS_BYPASS |
++			AXI_HDMI_CTRL_FULL_RANGE;
++	} else {
++		if (private->is_rgb) {
++			axi_hdmi_set_color_range(private, 0, 0xffffff);
++			ctrl = AXI_HDMI_CTRL_CSC_BYPASS;
++		} else {
++			axi_hdmi_set_color_range(private, 0x101010, 0xf0ebf0);
++			ctrl = 0;
++		}
++	}
++
++	writel(ctrl, private->base + AXI_HDMI_REG_CTRL);
++
++	return count;
++}
++
++static const struct file_operations axi_hdmi_mode_fops = {
++	.open = simple_open,
++	.read = axi_hdmi_read_mode,
++	.write = axi_hdmi_set_mode,
++};
++
++static void axi_hdmi_debugfs_init(struct axi_hdmi_encoder *encoder)
++{
++	struct axi_hdmi_private *priv = encoder->encoder.base.dev->dev_private;
++
++	encoder->regset.base = priv->base;
++	encoder->regset.regs = axi_hdmi_encoder_debugfs_regs;
++	encoder->regset.nregs = ARRAY_SIZE(axi_hdmi_encoder_debugfs_regs);
++
++	debugfs_create_regset32(dev_name(encoder->encoder.base.dev->dev), S_IRUGO, NULL, &encoder->regset);
++	debugfs_create_file("color_pattern", 0600, NULL, priv, &axi_hdmi_cp_fops);
++	debugfs_create_file("mode", 0600, NULL, priv, &axi_hdmi_mode_fops);
++}
++
++#else
++
++static inline void axi_hdmi_debugfs_init(struct axi_hdmi_encoder *enc)
++{
++}
++
++#endif
++
++static void axi_hdmi_encoder_enable(struct drm_encoder *encoder)
++{
++	struct axi_hdmi_encoder *axi_hdmi_encoder = to_axi_hdmi_encoder(encoder);
++	struct drm_connector *connector;
++	struct axi_hdmi_private *private = encoder->dev->dev_private;
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++	struct adv7511_video_config config;
++	struct edid *edid;
++
++	if (!private->clk_enabled) {
++		clk_prepare_enable(private->hdmi_clock);
++		private->clk_enabled = true;
++	}
++	writel(AXI_HDMI_RESET_ENABLE, private->base + AXI_HDMI_REG_RESET);
++
++	if (!sfuncs)
++		return;
++
++	connector = &axi_hdmi_encoder->connector;
++	edid = drm_connector_get_edid(connector);
++
++	if (edid)
++		config.hdmi_mode = drm_detect_hdmi_monitor(edid);
++	else
++		config.hdmi_mode = false;
++
++	hdmi_avi_infoframe_init(&config.avi_infoframe);
++
++	config.avi_infoframe.scan_mode = HDMI_SCAN_MODE_UNDERSCAN;
++
++	if (private->is_rgb) {
++			config.csc_enable = false;
++			config.avi_infoframe.colorspace = HDMI_COLORSPACE_RGB;
++	} else {
++		config.csc_scaling_factor = ADV7511_CSC_SCALING_4;
++		config.csc_coefficents = adv7511_csc_ycbcr_to_rgb;
++
++		if ((connector->display_info.color_formats & DRM_COLOR_FORMAT_YCRCB422) &&
++			config.hdmi_mode) {
++			config.csc_enable = false;
++			config.avi_infoframe.colorspace = HDMI_COLORSPACE_YUV422;
++		} else {
++			config.csc_enable = true;
++			config.avi_infoframe.colorspace = HDMI_COLORSPACE_RGB;
++		}
++	}
++
++	if (sfuncs->set_config)
++		sfuncs->set_config(encoder, &config);
++
++	if (sfuncs->dpms)
++		sfuncs->dpms(encoder, DRM_MODE_DPMS_ON);
++}
++
++static void axi_hdmi_encoder_disable(struct drm_encoder *encoder)
++{
++	struct axi_hdmi_private *private = encoder->dev->dev_private;
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++
++	writel(0, private->base + AXI_HDMI_REG_RESET);
++	if (private->clk_enabled) {
++		clk_disable_unprepare(private->hdmi_clock);
++		private->clk_enabled = false;
++	}
++
++	if (sfuncs && sfuncs->dpms)
++		sfuncs->dpms(encoder, DRM_MODE_DPMS_OFF);
++}
++
++static void axi_hdmi_encoder_mode_set(struct drm_encoder *encoder,
++	struct drm_crtc_state *crtc_state,
++	struct drm_connector_state *conn_state)
++{
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++	struct axi_hdmi_private *private = encoder->dev->dev_private;
++	struct drm_display_mode *mode = &crtc_state->mode;
++	unsigned int h_de_min, h_de_max;
++	unsigned int v_de_min, v_de_max;
++	unsigned int val;
++
++	if (sfuncs && sfuncs->mode_set)
++		sfuncs->mode_set(encoder, mode, &crtc_state->adjusted_mode);
++
++	h_de_min = mode->htotal - mode->hsync_start;
++	h_de_max = h_de_min + mode->hdisplay;
++	v_de_min = mode->vtotal - mode->vsync_start;
++	v_de_max = v_de_min + mode->vdisplay;
++
++	val = (mode->hdisplay << 16) | mode->htotal;
++	writel(val,  private->base + AXI_HDMI_REG_HTIMING1);
++	val = mode->hsync_end - mode->hsync_start;
++	writel(val,  private->base + AXI_HDMI_REG_HTIMING2);
++	val = (h_de_max << 16) | h_de_min;
++	writel(val,  private->base + AXI_HDMI_REG_HTIMING3);
++
++	val = (mode->vdisplay << 16) | mode->vtotal;
++	writel(val,  private->base + AXI_HDMI_REG_VTIMING1);
++	val = mode->vsync_end - mode->vsync_start;
++	writel(val,  private->base + AXI_HDMI_REG_VTIMING2);
++	val = (v_de_max << 16) | v_de_min;
++	writel(val,  private->base + AXI_HDMI_REG_VTIMING3);
++
++	clk_set_rate(private->hdmi_clock, mode->clock * 1000);
++}
++
++static const struct drm_encoder_helper_funcs axi_hdmi_encoder_helper_funcs = {
++	.enable = axi_hdmi_encoder_enable,
++	.disable = axi_hdmi_encoder_disable,
++	.atomic_mode_set = axi_hdmi_encoder_mode_set,
++};
++
++static void axi_hdmi_encoder_destroy(struct drm_encoder *encoder)
++{
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++	struct axi_hdmi_encoder *axi_hdmi_encoder =
++		to_axi_hdmi_encoder(encoder);
++
++	if (sfuncs && sfuncs->destroy)
++		sfuncs->destroy(encoder);
++
++	drm_encoder_cleanup(encoder);
++	kfree(axi_hdmi_encoder);
++}
++
++static const struct drm_encoder_funcs axi_hdmi_encoder_funcs = {
++	.destroy = axi_hdmi_encoder_destroy,
++};
++
++struct drm_encoder *axi_hdmi_encoder_create(struct drm_device *dev)
++{
++	struct drm_encoder *encoder;
++	struct axi_hdmi_encoder *axi_hdmi_encoder;
++	struct axi_hdmi_private *priv = dev->dev_private;
++	struct drm_bridge *bridge;
++	int ret;
++
++	axi_hdmi_encoder = kzalloc(sizeof(*axi_hdmi_encoder), GFP_KERNEL);
++	if (!axi_hdmi_encoder)
++		return NULL;
++
++	encoder = &axi_hdmi_encoder->encoder.base;
++	encoder->possible_crtcs = 1;
++
++	drm_encoder_init(dev, encoder, &axi_hdmi_encoder_funcs,
++			DRM_MODE_ENCODER_TMDS, NULL);
++	drm_encoder_helper_add(encoder, &axi_hdmi_encoder_helper_funcs);
++
++	bridge = of_drm_find_bridge(priv->encoder_slave->dev.of_node);
++	if (bridge) {
++		bridge->encoder = encoder;
++		encoder->bridge = bridge;
++		ret = drm_bridge_attach(encoder, bridge, NULL);
++		if (ret) {
++		    drm_encoder_cleanup(encoder);
++		    return NULL;
++		}
++	} else {
++		struct drm_connector *connector;
++		struct drm_i2c_encoder_driver *encoder_drv;
++
++		/* For backwards compatibility, drop it eventually. */
++		encoder_drv = to_drm_i2c_encoder_driver(to_i2c_driver(priv->encoder_slave->dev.driver));
++		encoder_drv->encoder_init(priv->encoder_slave, dev, &axi_hdmi_encoder->encoder);
++
++		connector = &axi_hdmi_encoder->connector;
++		axi_hdmi_connector_init(dev, connector, encoder);
++	}
++
++
++	axi_hdmi_debugfs_init(axi_hdmi_encoder);
++
++	writel(AXI_HDMI_SOURCE_SEL_NORMAL, priv->base + AXI_HDMI_REG_SOURCE_SEL);
++	if (priv->is_rgb) {
++		writel(AXI_HDMI_CTRL_CSC_BYPASS, priv->base + AXI_HDMI_REG_CTRL);
++		axi_hdmi_set_color_range(priv, 0, 0xffffff);
++	} else {
++		axi_hdmi_set_color_range(priv, 0x101010, 0xf0ebf0);
++	}
++
++	return encoder;
++}
++
++static int axi_hdmi_connector_get_modes(struct drm_connector *connector)
++{
++	struct drm_encoder *encoder = connector_to_encoder(connector);
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++	int count = 0;
++
++	if (sfuncs && sfuncs->get_modes)
++		count += sfuncs->get_modes(encoder, connector);
++
++	return count;
++}
++
++static int axi_hdmi_connector_mode_valid(struct drm_connector *connector,
++	struct drm_display_mode *mode)
++{
++	if (mode->clock > 165000)
++		return MODE_CLOCK_HIGH;
++
++	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
++		return MODE_NO_INTERLACE;
++
++	return MODE_OK;
++}
++
++static struct drm_encoder *axi_hdmi_best_encoder(struct drm_connector *connector)
++{
++	return connector_to_encoder(connector);
++}
++
++static struct drm_connector_helper_funcs axi_hdmi_connector_helper_funcs = {
++	.get_modes	= axi_hdmi_connector_get_modes,
++	.mode_valid	= axi_hdmi_connector_mode_valid,
++	.best_encoder	= axi_hdmi_best_encoder,
++};
++
++static enum drm_connector_status axi_hdmi_connector_detect(
++	struct drm_connector *connector, bool force)
++{
++	enum drm_connector_status status = connector_status_unknown;
++	struct drm_encoder *encoder = connector_to_encoder(connector);
++	const struct drm_encoder_slave_funcs *sfuncs = get_slave_funcs(encoder);
++
++	if (sfuncs && sfuncs->detect)
++		status = sfuncs->detect(encoder, connector);
++
++	return status;
++}
++
++static void axi_hdmi_connector_destroy(struct drm_connector *connector)
++{
++	drm_connector_unregister(connector);
++	drm_connector_cleanup(connector);
++}
++
++static struct drm_connector_funcs axi_hdmi_connector_funcs = {
++	.fill_modes = drm_helper_probe_single_connector_modes,
++	.detect = axi_hdmi_connector_detect,
++	.destroy = axi_hdmi_connector_destroy,
++	.reset = drm_atomic_helper_connector_reset,
++	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
++	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
++};
++
++static int axi_hdmi_connector_init(struct drm_device *dev,
++	struct drm_connector *connector, struct drm_encoder *encoder)
++{
++	int type;
++	int err;
++
++	type = DRM_MODE_CONNECTOR_HDMIA;
++	connector->polled = DRM_CONNECTOR_POLL_CONNECT |
++				DRM_CONNECTOR_POLL_DISCONNECT;
++
++	drm_connector_init(dev, connector, &axi_hdmi_connector_funcs, type);
++	drm_connector_helper_add(connector, &axi_hdmi_connector_helper_funcs);
++
++	err = drm_connector_register(connector);
++	if (err)
++		goto err_connector;
++
++	err = drm_connector_attach_encoder(connector, encoder);
++	if (err) {
++		DRM_ERROR("failed to attach a connector to a encoder\n");
++		goto err_sysfs;
++	}
++
++	return 0;
++
++err_sysfs:
++	drm_connector_unregister(connector);
++err_connector:
++	drm_connector_cleanup(connector);
++	return err;
++}
+diff --git a/drivers/gpu/drm/bridge/adv7511/Makefile b/drivers/gpu/drm/bridge/adv7511/Makefile
+index 5bb384938a71..aa3844e9938d 100644
+--- a/drivers/gpu/drm/bridge/adv7511/Makefile
++++ b/drivers/gpu/drm/bridge/adv7511/Makefile
+@@ -2,4 +2,5 @@ adv7511-y := adv7511_drv.o
+ adv7511-$(CONFIG_DRM_I2C_ADV7511_AUDIO) += adv7511_audio.o
+ adv7511-$(CONFIG_DRM_I2C_ADV7511_CEC) += adv7511_cec.o
+ adv7511-$(CONFIG_DRM_I2C_ADV7533) += adv7533.o
++adv7511-$(CONFIG_DEBUG_FS) += adv7511_debugfs.o
+ obj-$(CONFIG_DRM_I2C_ADV7511) += adv7511.o
+diff --git a/drivers/gpu/drm/bridge/adv7511/adv7511.h b/drivers/gpu/drm/bridge/adv7511/adv7511.h
+index 73d8ccb97742..0c4dcd9dc3fe 100644
+--- a/drivers/gpu/drm/bridge/adv7511/adv7511.h
++++ b/drivers/gpu/drm/bridge/adv7511/adv7511.h
+@@ -90,6 +90,7 @@
+ #define ADV7511_REG_ARC_CTRL			0xdf
+ #define ADV7511_REG_CEC_I2C_ADDR		0xe1
+ #define ADV7511_REG_CEC_CTRL			0xe2
++#define ADV7511_REG_SUPPLY_SELECT		0xe4
+ #define ADV7511_REG_CHIP_ID_HIGH		0xf5
+ #define ADV7511_REG_CHIP_ID_LOW			0xf6
+ 
+@@ -219,6 +220,11 @@
+ 
+ #define ADV7533_REG_CEC_OFFSET		0x70
+ 
++#define ADV7533_REG_TPG			0x55
++#define ADV7533_TPG_ENABLE		0x80
++#define ADV7533_TPG_RAMP		0x20
++#define ADV7533_TPG_COLORBAR		0x00
++
+ enum adv7511_input_clock {
+ 	ADV7511_INPUT_CLOCK_1X,
+ 	ADV7511_INPUT_CLOCK_2X,
+@@ -319,6 +325,7 @@ struct adv7511_video_config {
+ enum adv7511_type {
+ 	ADV7511,
+ 	ADV7533,
++	ADV7535,
+ };
+ 
+ #define ADV7511_MAX_ADDRS 3
+@@ -331,6 +338,7 @@ struct adv7511 {
+ 
+ 	struct regmap *regmap;
+ 	struct regmap *regmap_cec;
++	struct regmap *regmap_edid;
+ 	enum drm_connector_status status;
+ 	bool powered;
+ 
+@@ -349,6 +357,7 @@ struct adv7511 {
+ 
+ 	struct drm_bridge bridge;
+ 	struct drm_connector connector;
++	struct dentry *debugfs;
+ 
+ 	bool embedded_sync;
+ 	enum adv7511_sync_polarity vsync_polarity;
+@@ -453,4 +462,18 @@ static inline void adv7511_audio_exit(struct adv7511 *adv7511)
+ }
+ #endif /* CONFIG_DRM_I2C_ADV7511_AUDIO */
+ 
++#ifdef CONFIG_DEBUG_FS
++int adv7511_debugfs_init(struct adv7511 *adv7511);
++void adv7511_debugfs_remove(struct adv7511 *adv7511);
++#else
++static inline int adv7511_debugfs_init(struct adv7511 *adv7511)
++{
++	return 0;
++}
++static inline void adv7511_debugfs_remove(struct adv7511 *adv7511)
++{
++	return 0;
++}
++#endif
++
+ #endif /* __DRM_I2C_ADV7511_H__ */
+diff --git a/drivers/gpu/drm/bridge/adv7511/adv7511_audio.c b/drivers/gpu/drm/bridge/adv7511/adv7511_audio.c
+index 1b4783d45c53..36a304bc886d 100644
+--- a/drivers/gpu/drm/bridge/adv7511/adv7511_audio.c
++++ b/drivers/gpu/drm/bridge/adv7511/adv7511_audio.c
+@@ -120,6 +120,9 @@ int adv7511_hdmi_hw_params(struct device *dev, void *data,
+ 		audio_source = ADV7511_AUDIO_SOURCE_I2S;
+ 		i2s_format = ADV7511_I2S_FORMAT_LEFT_J;
+ 		break;
++	case HDMI_SPDIF:
++		audio_source = ADV7511_AUDIO_SOURCE_SPDIF;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -213,7 +216,7 @@ static const struct hdmi_codec_ops adv7511_codec_ops = {
+ static const struct hdmi_codec_pdata codec_data = {
+ 	.ops = &adv7511_codec_ops,
+ 	.max_i2s_channels = 2,
+-	.i2s = 1,
++	.spdif = 1,
+ };
+ 
+ int adv7511_audio_init(struct device *dev, struct adv7511 *adv7511)
+diff --git a/drivers/gpu/drm/bridge/adv7511/adv7511_debugfs.c b/drivers/gpu/drm/bridge/adv7511/adv7511_debugfs.c
+new file mode 100644
+index 000000000000..90735d51b423
+--- /dev/null
++++ b/drivers/gpu/drm/bridge/adv7511/adv7511_debugfs.c
+@@ -0,0 +1,111 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Analog Devices ADV7511/33/35 HDMI transmitter driver
++ *
++ * Copyright (C) 2018-2019 Analog Devices, All Rights Reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/debugfs.h>
++#include <drm/drm_print.h>
++#include <drm/drm_device.h>
++#include <drm/drm_file.h>
++
++#include "adv7511.h"
++
++static int tpg_show(struct seq_file *m, void *data)
++{
++	struct adv7511 *adv = m->private;
++	unsigned int val;
++	int ret;
++
++	ret = regmap_read(adv->regmap_cec, ADV7533_REG_TPG, &val);
++	if (ret)
++		return ret;
++
++	if (!(val & ADV7533_TPG_ENABLE))
++		seq_puts(m, "off\n");
++	else if (val & ADV7533_TPG_RAMP)
++		seq_puts(m, "ramp\n");
++	else if (val & ADV7533_TPG_ENABLE)
++		seq_puts(m, "colorbar\n");
++
++	return 0;
++}
++
++static int tpg_open(struct inode *inode, struct file *file)
++{
++	struct drm_connector *dev = inode->i_private;
++
++	return single_open(file, tpg_show, dev);
++}
++
++static ssize_t tpg_write(struct file *file, const char __user *ubuf,
++			 size_t len, loff_t *offp)
++{
++	struct seq_file *m = file->private_data;
++	struct adv7511 *adv = m->private;
++	char buf[9];
++	int ret;
++
++	if (len > sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, ubuf, len))
++		return -EFAULT;
++
++	buf[len] = '\0';
++
++	if (sysfs_streq(buf, "colorbar"))
++		ret = regmap_update_bits(adv->regmap_cec, ADV7533_REG_TPG, 0xE0,
++				   ADV7533_TPG_ENABLE | ADV7533_TPG_COLORBAR);
++	else if (sysfs_streq(buf, "ramp"))
++		ret = regmap_update_bits(adv->regmap_cec, ADV7533_REG_TPG, 0xE0,
++				   ADV7533_TPG_ENABLE | ADV7533_TPG_RAMP);
++	else if (sysfs_streq(buf, "off"))
++		ret = regmap_update_bits(adv->regmap_cec, ADV7533_REG_TPG,
++				   ADV7533_TPG_ENABLE, ~ADV7533_TPG_ENABLE);
++	else
++		return -EINVAL;
++
++	if (ret)
++		return ret;
++
++	return len;
++}
++
++static const struct file_operations adv7511_tpg_fops = {
++	.owner = THIS_MODULE,
++	.open = tpg_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.release = single_release,
++	.write = tpg_write
++};
++
++int adv7511_debugfs_init(struct adv7511 *adv7511)
++{
++	struct drm_bridge *bridge = &adv7511->bridge;
++	struct drm_minor *minor = bridge->dev->primary;
++	struct dentry *debugfs_file;
++
++	adv7511->debugfs = debugfs_create_dir("adv7511", minor->debugfs_root);
++	if (IS_ERR_OR_NULL(adv7511->debugfs))
++		return -ENOMEM;
++
++	/* tpg only on ADV7533/35*/
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535) {
++		debugfs_file = debugfs_create_file("tpg", 0644,
++				adv7511->debugfs, adv7511, &adv7511_tpg_fops);
++
++		if (IS_ERR_OR_NULL(debugfs_file))
++			DRM_ERROR("Failed to create TPG debugfs file\n");
++	}
++
++	return 0;
++}
++
++void adv7511_debugfs_remove(struct adv7511 *adv7511)
++{
++	debugfs_remove_recursive(adv7511->debugfs);
++}
+diff --git a/drivers/gpu/drm/bridge/adv7511/adv7511_drv.c b/drivers/gpu/drm/bridge/adv7511/adv7511_drv.c
+index 85c2d407a52e..2f736e884ab8 100644
+--- a/drivers/gpu/drm/bridge/adv7511/adv7511_drv.c
++++ b/drivers/gpu/drm/bridge/adv7511/adv7511_drv.c
+@@ -22,6 +22,12 @@
+ 
+ #include "adv7511.h"
+ 
++#if defined(DEBUG)
++#define adv_trace	trace_printk
++#else
++#define adv_trace(...)
++#endif /* adv_trace */
++
+ /* ADI recommended values for proper operation. */
+ static const struct reg_sequence adv7511_fixed_registers[] = {
+ 	{ 0x98, 0x03 },
+@@ -367,7 +373,7 @@ static void adv7511_power_on(struct adv7511 *adv7511)
+ 	 */
+ 	regcache_sync(adv7511->regmap);
+ 
+-	if (adv7511->type == ADV7533)
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
+ 		adv7533_dsi_power_on(adv7511);
+ 	adv7511->powered = true;
+ }
+@@ -387,7 +393,7 @@ static void __adv7511_power_off(struct adv7511 *adv7511)
+ static void adv7511_power_off(struct adv7511 *adv7511)
+ {
+ 	__adv7511_power_off(adv7511);
+-	if (adv7511->type == ADV7533)
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
+ 		adv7533_dsi_power_off(adv7511);
+ 	adv7511->powered = false;
+ }
+@@ -462,6 +468,9 @@ static int adv7511_irq_process(struct adv7511 *adv7511, bool process_hpd)
+ 	if (ret < 0)
+ 		return ret;
+ 
++	adv_trace(": IRQ reg 0x96 = 0x%02x, IRQ reg 0x97 = 0x%02x\n", irq0,
++		  irq1);
++
+ 	regmap_write(adv7511->regmap, ADV7511_REG_INT(0), irq0);
+ 	regmap_write(adv7511->regmap, ADV7511_REG_INT(1), irq1);
+ 
+@@ -522,9 +531,6 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
+ 				  size_t len)
+ {
+ 	struct adv7511 *adv7511 = data;
+-	struct i2c_msg xfer[2];
+-	uint8_t offset;
+-	unsigned int i;
+ 	int ret;
+ 
+ 	if (len > 128)
+@@ -547,32 +553,8 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
+ 				return ret;
+ 		}
+ 
+-		/* Break this apart, hopefully more I2C controllers will
+-		 * support 64 byte transfers than 256 byte transfers
+-		 */
+-
+-		xfer[0].addr = adv7511->i2c_edid->addr;
+-		xfer[0].flags = 0;
+-		xfer[0].len = 1;
+-		xfer[0].buf = &offset;
+-		xfer[1].addr = adv7511->i2c_edid->addr;
+-		xfer[1].flags = I2C_M_RD;
+-		xfer[1].len = 64;
+-		xfer[1].buf = adv7511->edid_buf;
+-
+-		offset = 0;
+-
+-		for (i = 0; i < 4; ++i) {
+-			ret = i2c_transfer(adv7511->i2c_edid->adapter, xfer,
+-					   ARRAY_SIZE(xfer));
+-			if (ret < 0)
+-				return ret;
+-			else if (ret != 2)
+-				return -EIO;
+-
+-			xfer[1].buf += 64;
+-			offset += 64;
+-		}
++		ret = regmap_bulk_read(adv7511->regmap_edid, 0,
++				       adv7511->edid_buf, 256);
+ 
+ 		adv7511->current_edid_segment = block / 2;
+ 	}
+@@ -585,6 +567,14 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
+ 	return 0;
+ }
+ 
++static const struct regmap_config adv7511_edid_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++
++	.max_register = 0xff,
++	.cache_type = REGCACHE_NONE,
++};
++
+ /* -----------------------------------------------------------------------------
+  * ADV75xx helpers
+  */
+@@ -756,12 +746,17 @@ static void adv7511_mode_set(struct adv7511 *adv7511,
+ 	else
+ 		low_refresh_rate = ADV7511_LOW_REFRESH_RATE_NONE;
+ 
+-	regmap_update_bits(adv7511->regmap, 0xfb,
+-		0x6, low_refresh_rate << 1);
++	if (adv7511->type == ADV7511)
++		regmap_update_bits(adv7511->regmap, 0xfb,
++			0x6, low_refresh_rate << 1);
++	else
++		regmap_update_bits(adv7511->regmap, 0x4a,
++			0xc, low_refresh_rate << 2);
++
+ 	regmap_update_bits(adv7511->regmap, 0x17,
+ 		0x60, (vsync_polarity << 6) | (hsync_polarity << 5));
+ 
+-	if (adv7511->type == ADV7533)
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
+ 		adv7533_mode_set(adv7511, adj_mode);
+ 
+ 	drm_mode_copy(&adv7511->curr_mode, adj_mode);
+@@ -874,21 +869,31 @@ static int adv7511_bridge_attach(struct drm_bridge *bridge)
+ 				 &adv7511_connector_helper_funcs);
+ 	drm_connector_attach_encoder(&adv->connector, bridge->encoder);
+ 
+-	if (adv->type == ADV7533)
++	if (adv->type == ADV7533 || adv->type == ADV7535)
+ 		ret = adv7533_attach_dsi(adv);
+ 
+ 	if (adv->i2c_main->irq)
+ 		regmap_write(adv->regmap, ADV7511_REG_INT_ENABLE(0),
+ 			     ADV7511_INT0_HPD);
+ 
++	adv7511_debugfs_init(adv);
++
+ 	return ret;
+ }
+ 
++static void adv7511_bridge_detach(struct drm_bridge *bridge)
++{
++	struct adv7511 *adv = bridge_to_adv7511(bridge);
++
++	adv7511_debugfs_remove(adv);
++}
++
+ static const struct drm_bridge_funcs adv7511_bridge_funcs = {
+ 	.enable = adv7511_bridge_enable,
+ 	.disable = adv7511_bridge_disable,
+ 	.mode_set = adv7511_bridge_mode_set,
+ 	.attach = adv7511_bridge_attach,
++	.detach = adv7511_bridge_detach,
+ };
+ 
+ /* -----------------------------------------------------------------------------
+@@ -952,7 +957,7 @@ static bool adv7511_cec_register_volatile(struct device *dev, unsigned int reg)
+ 	struct i2c_client *i2c = to_i2c_client(dev);
+ 	struct adv7511 *adv7511 = i2c_get_clientdata(i2c);
+ 
+-	if (adv7511->type == ADV7533)
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
+ 		reg -= ADV7533_REG_CEC_OFFSET;
+ 
+ 	switch (reg) {
+@@ -994,7 +999,7 @@ static int adv7511_init_cec_regmap(struct adv7511 *adv)
+ 		goto err;
+ 	}
+ 
+-	if (adv->type == ADV7533) {
++	if (adv->type == ADV7533 || adv->type == ADV7535) {
+ 		ret = adv7533_patch_cec_registers(adv);
+ 		if (ret)
+ 			goto err;
+@@ -1094,8 +1099,9 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
+ 	struct adv7511_link_config link_config;
+ 	struct adv7511 *adv7511;
+ 	struct device *dev = &i2c->dev;
++	struct regulator *reg_v1p2;
+ 	unsigned int val;
+-	int ret;
++	int ret, reg_v1p2_uV;
+ 
+ 	if (!dev->of_node)
+ 		return -EINVAL;
+@@ -1163,6 +1169,18 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
+ 	if (ret)
+ 		goto uninit_regulators;
+ 
++	if (adv7511->type == ADV7533) {
++		ret = match_string(adv7533_supply_names, adv7511->num_supplies,
++									"v1p2");
++		reg_v1p2 = adv7511->supplies[ret].consumer;
++		reg_v1p2_uV = regulator_get_voltage(reg_v1p2);
++
++		if (reg_v1p2_uV == 1200000) {
++			regmap_update_bits(adv7511->regmap,
++				ADV7511_REG_SUPPLY_SELECT, 0x80, 0x80);
++		}
++	}
++
+ 	adv7511_packet_disable(adv7511, 0xffff);
+ 
+ 	adv7511->i2c_edid = i2c_new_secondary_device(i2c, "edid",
+@@ -1172,6 +1190,13 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
+ 		goto uninit_regulators;
+ 	}
+ 
++	adv7511->regmap_edid = devm_regmap_init_i2c(adv7511->i2c_edid,
++						&adv7511_edid_regmap_config);
++	if (IS_ERR(adv7511->regmap_edid)) {
++		ret = PTR_ERR(adv7511->regmap_edid);
++		goto err_i2c_unregister_edid;
++	}
++
+ 	regmap_write(adv7511->regmap, ADV7511_REG_EDID_I2C_ADDR,
+ 		     adv7511->i2c_edid->addr << 1);
+ 
+@@ -1242,7 +1267,7 @@ static int adv7511_remove(struct i2c_client *i2c)
+ {
+ 	struct adv7511 *adv7511 = i2c_get_clientdata(i2c);
+ 
+-	if (adv7511->type == ADV7533)
++	if (adv7511->type == ADV7533 || adv7511->type == ADV7535)
+ 		adv7533_detach_dsi(adv7511);
+ 	i2c_unregister_device(adv7511->i2c_cec);
+ 	if (adv7511->cec_clk)
+@@ -1268,6 +1293,7 @@ static const struct i2c_device_id adv7511_i2c_ids[] = {
+ 	{ "adv7513", ADV7511 },
+ #ifdef CONFIG_DRM_I2C_ADV7533
+ 	{ "adv7533", ADV7533 },
++	{ "adv7535", ADV7535 },
+ #endif
+ 	{ }
+ };
+@@ -1279,6 +1305,7 @@ static const struct of_device_id adv7511_of_ids[] = {
+ 	{ .compatible = "adi,adv7513", .data = (void *)ADV7511 },
+ #ifdef CONFIG_DRM_I2C_ADV7533
+ 	{ .compatible = "adi,adv7533", .data = (void *)ADV7533 },
++	{ .compatible = "adi,adv7535", .data = (void *)ADV7535 },
+ #endif
+ 	{ }
+ };
+diff --git a/include/drm/drm_edid.h b/include/drm/drm_edid.h
+index e3c404833115..0765d225b038 100644
+--- a/include/drm/drm_edid.h
++++ b/include/drm/drm_edid.h
+@@ -24,6 +24,7 @@
+ #define __DRM_EDID_H__
+ 
+ #include <linux/types.h>
++#include <drm/drm_crtc.h>
+ #include <linux/hdmi.h>
+ 
+ struct drm_device;
+@@ -431,6 +432,21 @@ static inline int drm_eld_size(const uint8_t *eld)
+ 	return DRM_ELD_HEADER_BLOCK_SIZE + eld[DRM_ELD_BASELINE_ELD_LEN] * 4;
+ }
+ 
++/**
++ * drm_connector_get_edid - Get current EDID from the given connector
++ * @connector: pointer to the connector stucture
++ *
++ * This is a helper for accessing the drm blob buffered in the connector
++ * struct (if any)
++ */
++static inline struct edid *drm_connector_get_edid(struct drm_connector *connector)
++{
++	if (!connector->edid_blob_ptr)
++		return NULL;
++
++	return (struct edid *)connector->edid_blob_ptr->data;
++}
++
+ /**
+  * drm_eld_get_spk_alloc - Get speaker allocation
+  * @eld: pointer to an ELD memory structure
+diff --git a/include/linux/fpga/adi-axi-common.h b/include/linux/fpga/adi-axi-common.h
+new file mode 100644
+index 000000000000..80dbcee5bb75
+--- /dev/null
++++ b/include/linux/fpga/adi-axi-common.h
+@@ -0,0 +1,84 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Analog Devices AXI common registers & definitions
++ *
++ * Copyright 2019 Analog Devices Inc.
++ *
++ * https://wiki.analog.com/resources/fpga/docs/axi_ip
++ * https://wiki.analog.com/resources/fpga/docs/hdl/regmap
++ */
++
++#ifndef ADI_AXI_COMMON_H_
++#define ADI_AXI_COMMON_H_
++
++#define	ADI_AXI_REG_VERSION			0x0000
++#define ADI_AXI_REG_ID				0x0004
++#define ADI_AXI_REG_SCRATCH			0x0008
++#define ADI_AXI_REG_CONFIG			0x000c
++
++#define ADI_AXI_REG_FPGA_INFO			0x001C
++#define ADI_AXI_REG_FPGA_VOLTAGE		0x0140
++
++#define ADI_AXI_PCORE_VER(major, minor, patch)	\
++	(((major) << 16) | ((minor) << 8) | (patch))
++
++#define ADI_AXI_PCORE_VER_MAJOR(version)	(((version) >> 16) & 0xff)
++#define ADI_AXI_PCORE_VER_MINOR(version)	(((version) >> 8) & 0xff)
++#define ADI_AXI_PCORE_VER_PATCH(version)	((version) & 0xff)
++
++#define ADI_AXI_INFO_FPGA_TECH(info)		(((info) >> 24) & 0xff)
++#define ADI_AXI_INFO_FPGA_FAMILY(info)		(((info) >> 16) & 0xff)
++#define ADI_AXI_INFO_FPGA_SPEED_GRADE(info)	(((info) >> 8) & 0xff)
++#define ADI_AXI_INFO_FPGA_DEV_PACKAGE(info)	((info) & 0xff)
++#define ADI_AXI_INFO_FPGA_VOLTAGE(val)		((val) & 0xffff)
++
++enum adi_axi_fgpa_technology {
++	ADI_AXI_FPGA_TECH_UNKNOWN = 0,
++	ADI_AXI_FPGA_TECH_SERIES7,
++	ADI_AXI_FPGA_TECH_ULTRASCALE,
++	ADI_AXI_FPGA_TECH_ULTRASCALE_PLUS,
++};
++
++enum adi_axi_fpga_family {
++	ADI_AXI_FPGA_FAMILY_UNKNOWN = 0,
++	ADI_AXI_FPGA_FAMILY_ARTIX,
++	ADI_AXI_FPGA_FAMILY_KINTEX,
++	ADI_AXI_FPGA_FAMILY_VIRTEX,
++	ADI_AXI_FPGA_FAMILY_ZYNQ,
++};
++
++enum adi_axi_fpga_speed_grade {
++	ADI_AXI_FPGA_SPEED_UNKNOWN	= 0,
++	ADI_AXI_FPGA_SPEED_1	= 10,
++	ADI_AXI_FPGA_SPEED_1L	= 11,
++	ADI_AXI_FPGA_SPEED_1H	= 12,
++	ADI_AXI_FPGA_SPEED_1HV	= 13,
++	ADI_AXI_FPGA_SPEED_1LV	= 14,
++	ADI_AXI_FPGA_SPEED_2	= 20,
++	ADI_AXI_FPGA_SPEED_2L	= 21,
++	ADI_AXI_FPGA_SPEED_2LV	= 22,
++	ADI_AXI_FPGA_SPEED_3	= 30,
++};
++
++enum adi_axi_fpga_dev_pack {
++	ADI_AXI_FPGA_DEV_UNKNOWN = 0,
++	ADI_AXI_FPGA_DEV_RF,
++	ADI_AXI_FPGA_DEV_FL,
++	ADI_AXI_FPGA_DEV_FF,
++	ADI_AXI_FPGA_DEV_FB,
++	ADI_AXI_FPGA_DEV_HC,
++	ADI_AXI_FPGA_DEV_FH,
++	ADI_AXI_FPGA_DEV_CS,
++	ADI_AXI_FPGA_DEV_CP,
++	ADI_AXI_FPGA_DEV_FT,
++	ADI_AXI_FPGA_DEV_FG,
++	ADI_AXI_FPGA_DEV_SB,
++	ADI_AXI_FPGA_DEV_RB,
++	ADI_AXI_FPGA_DEV_RS,
++	ADI_AXI_FPGA_DEV_CL,
++	ADI_AXI_FPGA_DEV_SF,
++	ADI_AXI_FPGA_DEV_BA,
++	ADI_AXI_FPGA_DEV_FA,
++};
++
++#endif /* ADI_AXI_COMMON_H_ */
+-- 
+2.24.1
+

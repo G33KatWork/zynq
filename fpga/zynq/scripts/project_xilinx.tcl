@@ -56,9 +56,10 @@ proc project_create {project_name source_dir part board {mode 0} {parameter_list
     config_ip_cache -import_from_project -use_cache_location $root_dir/build/ipcache
   }
 
-  # Set IP core directory
-  set lib_dirs $root_dir/ip_repo
-  set_property ip_repo_paths $lib_dirs [current_fileset]
+  # Set IP core directories
+  set ipcore_lib_dirs $root_dir/ip_repo
+  lappend ipcore_lib_dirs $root_dir/third_party/adi/library
+  set_property ip_repo_paths $ipcore_lib_dirs [current_fileset]
   update_ip_catalog
 
   # Load custom message severity definitions

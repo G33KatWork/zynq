@@ -27,3 +27,14 @@ SRC_URI_append_autocopterall = " \
 KERNEL_FEATURES_append_autocopterall += " \
         copter.scc \
         "
+
+# CRZ01
+SRC_URI_append_crz01all = " \
+        file://0005-Include-ADI-drivers-for-HDMI-video-output.patch \
+        "
+
+KERNEL_FEATURES_append_crz01all += " \
+        rtc.scc \
+        adi-hdmi.scc \
+        10gbe.scc \
+        "

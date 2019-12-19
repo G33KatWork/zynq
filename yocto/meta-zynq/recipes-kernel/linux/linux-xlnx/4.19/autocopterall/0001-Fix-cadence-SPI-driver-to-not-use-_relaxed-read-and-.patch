@@ -1,7 +1,7 @@
-From f3f73e34905f6bd2088c5d66e4352f55b6901b90 Mon Sep 17 00:00:00 2001
+From c941ee0f80999efc6fb9fd1ad098f83fe71b476a Mon Sep 17 00:00:00 2001
 From: Andreas Galauner <andreas@galauner.de>
 Date: Mon, 25 Nov 2019 00:13:04 +0100
-Subject: [PATCH 1/4] Fix cadence SPI driver to not use _relaxed read and write
+Subject: [PATCH 1/5] Fix cadence SPI driver to not use _relaxed read and write
  variants as this lead to caching problems when accessing the SPI hardware
 
 ---
@@ -28,5 +28,5 @@ index 94cc0a152449..1ca9e24ddc9d 100644
  
  /**
 -- 
-2.24.0
+2.24.1
 

@@ -1,7 +1,7 @@
-From 87bef9d026af8563c9e3a76e636662fe190c8590 Mon Sep 17 00:00:00 2001
+From 628947dc2090d5d800c768a965a537973223eef2 Mon Sep 17 00:00:00 2001
 From: Andreas Galauner <andreas@galauner.de>
 Date: Mon, 25 Nov 2019 00:14:17 +0100
-Subject: [PATCH 4/4] Add MT9V032 stereo mode camera driver
+Subject: [PATCH 4/5] Add MT9V032 stereo mode camera driver
 
 ---
  drivers/media/i2c/Kconfig          |   9 +
@@ -809,5 +809,5 @@ index 000000000000..a49b13308d58
 +MODULE_AUTHOR("Andreas Galauner <andreas@galauner.de>");
 +MODULE_LICENSE("GPL");
 -- 
-2.24.0
+2.24.1
 

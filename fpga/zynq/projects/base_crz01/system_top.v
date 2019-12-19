@@ -21,7 +21,24 @@ module system_top
     FIXED_IO_mio,
     FIXED_IO_ps_clk,
     FIXED_IO_ps_porb,
-    FIXED_IO_ps_srstb);
+    FIXED_IO_ps_srstb,
+    hdmi_data,
+    hdmi_data_e,
+    hdmi_hsync,
+    hdmi_out_clk,
+    hdmi_vsync,
+    phy_refclk_n,
+    phy_refclk_p,
+    qplllock,
+    reset,
+    sfp0_rxn,
+    sfp0_rxp,
+    sfp0_txn,
+    sfp0_txp,
+    sfp1_rxn,
+    sfp1_rxp,
+    sfp1_txn,
+    sfp1_txp);
   inout [14:0]DDR_addr;
   inout [2:0]DDR_ba;
   inout DDR_cas_n;
@@ -43,6 +60,23 @@ module system_top
   inout FIXED_IO_ps_clk;
   inout FIXED_IO_ps_porb;
   inout FIXED_IO_ps_srstb;
+  output [15:0]hdmi_data;
+  output hdmi_data_e;
+  output hdmi_hsync;
+  output hdmi_out_clk;
+  output hdmi_vsync;
+  input phy_refclk_n;
+  input phy_refclk_p;
+  output qplllock;
+  input reset;
+  input sfp0_rxn;
+  input sfp0_rxp;
+  output sfp0_txn;
+  output sfp0_txp;
+  input sfp1_rxn;
+  input sfp1_rxp;
+  output sfp1_txn;
+  output sfp1_txp;
 
   wire [14:0]DDR_addr;
   wire [2:0]DDR_ba;
@@ -65,6 +99,23 @@ module system_top
   wire FIXED_IO_ps_clk;
   wire FIXED_IO_ps_porb;
   wire FIXED_IO_ps_srstb;
+  wire [15:0]hdmi_data;
+  wire hdmi_data_e;
+  wire hdmi_hsync;
+  wire hdmi_out_clk;
+  wire hdmi_vsync;
+  wire phy_refclk_n;
+  wire phy_refclk_p;
+  wire qplllock;
+  wire reset;
+  wire sfp0_rxn;
+  wire sfp0_rxp;
+  wire sfp0_txn;
+  wire sfp0_txp;
+  wire sfp1_rxn;
+  wire sfp1_rxp;
+  wire sfp1_txn;
+  wire sfp1_txp;
 
   system system_i
        (.DDR_addr(DDR_addr),
@@ -87,5 +138,22 @@ module system_top
         .FIXED_IO_mio(FIXED_IO_mio),
         .FIXED_IO_ps_clk(FIXED_IO_ps_clk),
         .FIXED_IO_ps_porb(FIXED_IO_ps_porb),
-        .FIXED_IO_ps_srstb(FIXED_IO_ps_srstb));
+        .FIXED_IO_ps_srstb(FIXED_IO_ps_srstb),
+        .hdmi_data(hdmi_data),
+        .hdmi_data_e(hdmi_data_e),
+        .hdmi_hsync(hdmi_hsync),
+        .hdmi_out_clk(hdmi_out_clk),
+        .hdmi_vsync(hdmi_vsync),
+        .phy_refclk_n(phy_refclk_n),
+        .phy_refclk_p(phy_refclk_p),
+        .qplllock(qplllock),
+        .reset(reset),
+        .sfp0_rxn(sfp0_rxn),
+        .sfp0_rxp(sfp0_rxp),
+        .sfp0_txn(sfp0_txn),
+        .sfp0_txp(sfp0_txp),
+        .sfp1_rxn(sfp1_rxn),
+        .sfp1_rxp(sfp1_rxp),
+        .sfp1_txn(sfp1_txn),
+        .sfp1_txp(sfp1_txp));
 endmodule

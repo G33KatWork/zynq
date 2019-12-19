@@ -1,0 +1,4 @@
+define KFEATURE_DESCRIPTION "10GBit/s Ethernet support"
+define KFEATURE_COMPATIBILITY board
+
+kconfig hardware 10gbe.cfg

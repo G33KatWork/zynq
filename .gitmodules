@@ -4,3 +4,7 @@
 [submodule "firmware/u-boot-xlnx"]
 	path = firmware/u-boot-xlnx
 	url = https://github.com/Xilinx/u-boot-xlnx.git
+[submodule "fpga/zynq/third_party/adi"]
+	path = fpga/zynq/third_party/adi
+	url = https://github.com/analogdevicesinc/hdl.git
+	branch = vivado_19_2_update

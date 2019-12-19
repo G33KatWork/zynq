@@ -1,7 +1,7 @@
-From 11f700bfa5e7ec7ffc3f4f73499b2f53abecb141 Mon Sep 17 00:00:00 2001
+From 9a565680ec42972b6503840f132c81a8e6ff69e1 Mon Sep 17 00:00:00 2001
 From: Andreas Galauner <andreas@galauner.de>
 Date: Mon, 25 Nov 2019 00:13:53 +0100
-Subject: [PATCH 3/4] Add LVDS mode to MT9V032 camera driver
+Subject: [PATCH 3/5] Add LVDS mode to MT9V032 camera driver
 
 ---
  drivers/media/i2c/mt9v032.c | 129 ++++++++++++++++++++++++++++++++++--
@@ -222,5 +222,5 @@ index f74730d24d8f..33fece53613f 100644
  	mt9v032->format.height = MT9V032_WINDOW_HEIGHT_DEF;
  	mt9v032->format.field = V4L2_FIELD_NONE;
 -- 
-2.24.0
+2.24.1
 

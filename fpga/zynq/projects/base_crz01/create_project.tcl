@@ -6,4 +6,5 @@ project_create base_crz01 $source_dir "xc7z100ffg900-2" "not-applicable"
 
 project_add_files base_crz01 $source_dir [list \
   "system_top.v" \
+  "system_constr.xdc" \
 ]
