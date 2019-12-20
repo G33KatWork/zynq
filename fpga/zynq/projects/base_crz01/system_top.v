@@ -1,7 +1,9 @@
 `timescale 1 ps / 1 ps
 
 module system_top
-   (DDR_addr,
+   (CLK_DDR3_clk_n,
+    CLK_DDR3_clk_p,
+    DDR_addr,
     DDR_ba,
     DDR_cas_n,
     DDR_ck_n,
@@ -22,6 +24,21 @@ module system_top
     FIXED_IO_ps_clk,
     FIXED_IO_ps_porb,
     FIXED_IO_ps_srstb,
+    PL_DDR3_addr,
+    PL_DDR3_ba,
+    PL_DDR3_cas_n,
+    PL_DDR3_ck_n,
+    PL_DDR3_ck_p,
+    PL_DDR3_cke,
+    PL_DDR3_cs_n,
+    PL_DDR3_dm,
+    PL_DDR3_dq,
+    PL_DDR3_dqs_n,
+    PL_DDR3_dqs_p,
+    PL_DDR3_odt,
+    PL_DDR3_ras_n,
+    PL_DDR3_reset_n,
+    PL_DDR3_we_n,
     hdmi_data,
     hdmi_data_e,
     hdmi_hsync,
@@ -45,6 +62,8 @@ module system_top
     sfp1_tx_fault,
     sfp1_txn,
     sfp1_txp);
+  input CLK_DDR3_clk_n;
+  input CLK_DDR3_clk_p;
   inout [14:0]DDR_addr;
   inout [2:0]DDR_ba;
   inout DDR_cas_n;
@@ -66,6 +85,21 @@ module system_top
   inout FIXED_IO_ps_clk;
   inout FIXED_IO_ps_porb;
   inout FIXED_IO_ps_srstb;
+  output [14:0]PL_DDR3_addr;
+  output [2:0]PL_DDR3_ba;
+  output PL_DDR3_cas_n;
+  output [0:0]PL_DDR3_ck_n;
+  output [0:0]PL_DDR3_ck_p;
+  output [0:0]PL_DDR3_cke;
+  output [0:0]PL_DDR3_cs_n;
+  output [3:0]PL_DDR3_dm;
+  inout [31:0]PL_DDR3_dq;
+  inout [3:0]PL_DDR3_dqs_n;
+  inout [3:0]PL_DDR3_dqs_p;
+  output [0:0]PL_DDR3_odt;
+  output PL_DDR3_ras_n;
+  output PL_DDR3_reset_n;
+  output PL_DDR3_we_n;
   output [15:0]hdmi_data;
   output hdmi_data_e;
   output hdmi_hsync;
@@ -90,6 +124,8 @@ module system_top
   output sfp1_txn;
   output sfp1_txp;
 
+  wire CLK_DDR3_clk_n;
+  wire CLK_DDR3_clk_p;
   wire [14:0]DDR_addr;
   wire [2:0]DDR_ba;
   wire DDR_cas_n;
@@ -111,6 +147,21 @@ module system_top
   wire FIXED_IO_ps_clk;
   wire FIXED_IO_ps_porb;
   wire FIXED_IO_ps_srstb;
+  wire [14:0]PL_DDR3_addr;
+  wire [2:0]PL_DDR3_ba;
+  wire PL_DDR3_cas_n;
+  wire [0:0]PL_DDR3_ck_n;
+  wire [0:0]PL_DDR3_ck_p;
+  wire [0:0]PL_DDR3_cke;
+  wire [0:0]PL_DDR3_cs_n;
+  wire [3:0]PL_DDR3_dm;
+  wire [31:0]PL_DDR3_dq;
+  wire [3:0]PL_DDR3_dqs_n;
+  wire [3:0]PL_DDR3_dqs_p;
+  wire [0:0]PL_DDR3_odt;
+  wire PL_DDR3_ras_n;
+  wire PL_DDR3_reset_n;
+  wire PL_DDR3_we_n;
   wire [15:0]hdmi_data;
   wire hdmi_data_e;
   wire hdmi_hsync;
@@ -136,7 +187,9 @@ module system_top
   wire sfp1_txp;
 
   system system_i
-       (.DDR_addr(DDR_addr),
+       (.CLK_DDR3_clk_n(CLK_DDR3_clk_n),
+        .CLK_DDR3_clk_p(CLK_DDR3_clk_p),
+        .DDR_addr(DDR_addr),
         .DDR_ba(DDR_ba),
         .DDR_cas_n(DDR_cas_n),
         .DDR_ck_n(DDR_ck_n),
@@ -157,6 +210,21 @@ module system_top
         .FIXED_IO_ps_clk(FIXED_IO_ps_clk),
         .FIXED_IO_ps_porb(FIXED_IO_ps_porb),
         .FIXED_IO_ps_srstb(FIXED_IO_ps_srstb),
+        .PL_DDR3_addr(PL_DDR3_addr),
+        .PL_DDR3_ba(PL_DDR3_ba),
+        .PL_DDR3_cas_n(PL_DDR3_cas_n),
+        .PL_DDR3_ck_n(PL_DDR3_ck_n),
+        .PL_DDR3_ck_p(PL_DDR3_ck_p),
+        .PL_DDR3_cke(PL_DDR3_cke),
+        .PL_DDR3_cs_n(PL_DDR3_cs_n),
+        .PL_DDR3_dm(PL_DDR3_dm),
+        .PL_DDR3_dq(PL_DDR3_dq),
+        .PL_DDR3_dqs_n(PL_DDR3_dqs_n),
+        .PL_DDR3_dqs_p(PL_DDR3_dqs_p),
+        .PL_DDR3_odt(PL_DDR3_odt),
+        .PL_DDR3_ras_n(PL_DDR3_ras_n),
+        .PL_DDR3_reset_n(PL_DDR3_reset_n),
+        .PL_DDR3_we_n(PL_DDR3_we_n),
         .hdmi_data(hdmi_data),
         .hdmi_data_e(hdmi_data_e),
         .hdmi_hsync(hdmi_hsync),

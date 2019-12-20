@@ -4,7 +4,12 @@
 
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 
-# Main transmit clock/period constraints
+# DDR3 MIG clock
+#set_property -dict {PACKAGE_PIN H9 IOSTANDARD DIFF_SSTL15} [get_ports CLK_DDR3_clk_p]
+#set_property -dict {PACKAGE_PIN G9 IOSTANDARD DIFF_SSTL15} [get_ports CLK_DDR3_clk_n]
+#create_clock -period 5.000 -name CLK_DDR3_MIG -waveform {0.000 2.500} [get_ports CLK_DDR3_clk_p]
+
+# SFP GTX refclk
 set_property PACKAGE_PIN AA8 [get_ports phy_refclk_p]
 #create_clock -period 6.400 -name gtx_refclk -waveform {0.000 3.200} [get_ports phy_refclk_p]
 
