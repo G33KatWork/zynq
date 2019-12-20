@@ -18,28 +18,34 @@ set_property IOSTANDARD LVCMOS15 [get_ports reset]
 set_property PACKAGE_PIN AE8 [get_ports sfp0_rxp]
 set_property PACKAGE_PIN AK2 [get_ports sfp0_txp]
 
-#set_property PACKAGE_PIN C7 [get_ports sfp0_tx_disable]
-#set_property IOSTANDARD LVCMOS15 [get_ports sfp0_tx_disable]
+set_property -dict {PACKAGE_PIN C7 IOSTANDARD LVCMOS15} [get_ports sfp0_tx_disable]
 
-#set_property PACKAGE_PIN K15 [get_ports sfp0_tx_fault]
-#set_property IOSTANDARD LVCMOS18 [get_ports sfp0_tx_fault]
+#WARNING: SFP0_RX_LOSS and SFP1_RX_LOSS are switched on the level shifter according to the schematic
+set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS18} [get_ports sfp0_rx_loss]
 
-#set_property PACKAGE_PIN J15 [get_ports sfp0_loss_of_signal]
-#set_property IOSTANDARD LVCMOS18 [get_ports sfp0_loss_of_signal]
+#WARNING: SFP0_TX_FAULT and SFP1_TX_FAULT are switched on the level shifter according to the schematic
+set_property -dict {PACKAGE_PIN F15 IOSTANDARD LVCMOS18} [get_ports sfp0_tx_fault]
+
+#WARNING: moddef0 is broken on the board! It is an SFP output and FPGA input and wired wrong on a levelshifter
+#The only reason why nothing is burning yet is that inside an SFP this pin gets pulled to GND via a 100 Ohm resistor
+#set_property -dict {PACKAGE_PIN A7 IOSTANDARD LVCMOS15} [get_ports sfp0_moddef]
 
 # SFP 1
 
 set_property PACKAGE_PIN AG8 [get_ports sfp1_rxp]
 set_property PACKAGE_PIN AJ4 [get_ports sfp1_txp]
 
-#set_property PACKAGE_PIN A9 [get_ports sfp1_tx_disable]
-#set_property IOSTANDARD LVCMOS15 [get_ports sfp1_tx_disable]
+set_property -dict {PACKAGE_PIN A9 IOSTANDARD LVCMOS15} [get_ports sfp1_tx_disable]
 
-#set_property PACKAGE_PIN F15 [get_ports sfp1_tx_fault]
-#set_property IOSTANDARD LVCMOS18 [get_ports sfp1_tx_fault]
+#WARNING: SFP0_RX_LOSS and SFP1_RX_LOSS are switched on the level shifter according to the schematic
+set_property -dict {PACKAGE_PIN J15 IOSTANDARD LVCMOS18} [get_ports sfp1_rx_loss]
 
-#set_property PACKAGE_PIN F14 [get_ports sfp1_loss_of_signal]
-#set_property IOSTANDARD LVCMOS18 [get_ports sfp1_loss_of_signal]
+#WARNING: SFP0_TX_FAULT and SFP1_TX_FAULT are switched on the level shifter according to the schematic
+set_property -dict {PACKAGE_PIN K15 IOSTANDARD LVCMOS18} [get_ports sfp1_tx_fault]
+
+#WARNING: moddef0 is broken on the board! It is an SFP output and FPGA input and wired wrong on a levelshifter
+#The only reason why nothing is burning yet is that inside an SFP this pin gets pulled to GND via a 100 Ohm resistor
+#set_property -dict {PACKAGE_PIN B9 IOSTANDARD LVCMOS15} [get_ports sfp1_moddef]
 
 # HDMI
 
@@ -67,7 +73,10 @@ set_property -dict {PACKAGE_PIN  E17  IOSTANDARD LVCMOS18} [get_ports hdmi_data[
 #set_property -dict {PACKAGE_PIN  D14  IOSTANDARD LVCMOS18} [get_ports spdif]
 
 # LEDs
-set_property -dict {PACKAGE_PIN  C17  IOSTANDARD LVCMOS18} [get_ports qplllock]
+set_property -dict {PACKAGE_PIN  C17  IOSTANDARD LVCMOS18} [get_ports led1]
+#set_property -dict {PACKAGE_PIN  B16  IOSTANDARD LVCMOS18} [get_ports led2]
+#set_property -dict {PACKAGE_PIN  G12  IOSTANDARD LVCMOS18} [get_ports led3]
+#set_property -dict {PACKAGE_PIN  F12  IOSTANDARD LVCMOS18} [get_ports led4]
 
 # User input
 

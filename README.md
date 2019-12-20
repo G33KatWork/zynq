@@ -47,3 +47,18 @@ Setting MAC address in I2C eeprom:
     i2c mw 53 FD 31
     i2c mw 53 FE 33
     i2c mw 53 FF 73
+
+Setting up yocto package repo:
+
+    bitbake package-index
+    cd build/tmp/deploy/ipk
+    sudo python3 -m http.server --bind 0.0.0.0 80
+
+On the machine:
+
+    cat >> /etc/opkg/opkg.conf << EOF
+    src/gz all http://192.168.178.37/all
+    src/gz cortexa9hf-vfp-neon-mx6 http://192.168.178.37/base_crz01_carrier_zynq7
+    src/gz cortexa9hf-vfp-neon http://192.168.178.37/cortexa9t2hf-neon
+    EOF
+    opkg update

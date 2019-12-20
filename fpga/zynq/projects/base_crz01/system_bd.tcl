@@ -51,7 +51,6 @@ xilinx.com:ip:util_vector_logic:2.0\
 analog.com:user:axi_clkgen:1.0\
 analog.com:user:axi_hdmi_tx:1.0\
 analog.com:user:axi_dmac:1.0\
-xilinx.com:ip:xlconstant:1.1\
 xilinx.com:ip:axi_10g_ethernet:3.1\
 xilinx.com:ip:axi_dma:7.1\
 xilinx.com:ip:axis_data_fifo:2.0\
@@ -146,18 +145,15 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   create_bd_pin -dir O -type intr sfp1_dma_tx_introut
   create_bd_pin -dir I sfp1_rxn
   create_bd_pin -dir I sfp1_rxp
+  create_bd_pin -dir O sfp1_tx_disable
   create_bd_pin -dir O sfp1_txn
   create_bd_pin -dir O sfp1_txp
+  create_bd_pin -dir I signal_detect
+  create_bd_pin -dir I tx_fault
   create_bd_pin -dir I -type rst tx_path_aresetn
   create_bd_pin -dir I txuserrdy
   create_bd_pin -dir I -type clk txusrclk
   create_bd_pin -dir I -type clk txusrclk2
-
-  # Create instance: gnd, and set properties
-  set gnd [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 gnd ]
-  set_property -dict [ list \
-   CONFIG.CONST_VAL {0} \
- ] $gnd
 
   # Create instance: sfp1_10gbe, and set properties
   set sfp1_10gbe [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_10g_ethernet:3.1 sfp1_10gbe ]
@@ -197,6 +193,8 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   # Create instance: sfp1_dma, and set properties
   set sfp1_dma [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_dma:7.1 sfp1_dma ]
   set_property -dict [ list \
+   CONFIG.c_include_mm2s_dre {1} \
+   CONFIG.c_include_s2mm_dre {1} \
    CONFIG.c_m_axi_mm2s_data_width {64} \
    CONFIG.c_m_axis_mm2s_tdata_width {64} \
    CONFIG.c_mm2s_burst_size {256} \
@@ -207,19 +205,16 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   # Create instance: sfp1_rx_fifo, and set properties
   set sfp1_rx_fifo [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 sfp1_rx_fifo ]
   set_property -dict [ list \
-   CONFIG.FIFO_DEPTH {32768} \
+   CONFIG.FIFO_DEPTH {2048} \
    CONFIG.FIFO_MODE {2} \
  ] $sfp1_rx_fifo
 
   # Create instance: sfp1_tx_fifo, and set properties
   set sfp1_tx_fifo [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 sfp1_tx_fifo ]
   set_property -dict [ list \
-   CONFIG.FIFO_DEPTH {32768} \
+   CONFIG.FIFO_DEPTH {2048} \
    CONFIG.FIFO_MODE {2} \
  ] $sfp1_tx_fifo
-
-  # Create instance: vcc, and set properties
-  set vcc [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 vcc ]
 
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins M_AXI_SG] [get_bd_intf_pins sfp1_dma/M_AXI_SG]
@@ -235,7 +230,6 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   # Create port connections
   connect_bd_net -net areset_coreclk_1 [get_bd_pins areset_coreclk] [get_bd_pins sfp1_10gbe/areset_coreclk]
   connect_bd_net -net coreclk_1 [get_bd_pins coreclk] [get_bd_pins sfp1_10gbe/coreclk] [get_bd_pins sfp1_dma/m_axi_mm2s_aclk] [get_bd_pins sfp1_dma/m_axi_s2mm_aclk] [get_bd_pins sfp1_rx_fifo/s_axis_aclk] [get_bd_pins sfp1_tx_fifo/s_axis_aclk]
-  connect_bd_net -net gnd_dout [get_bd_pins gnd/dout] [get_bd_pins sfp1_10gbe/tx_fault]
   connect_bd_net -net gtrxreset_1 [get_bd_pins gtrxreset] [get_bd_pins sfp1_10gbe/gtrxreset]
   connect_bd_net -net gttxreset_1 [get_bd_pins gttxreset] [get_bd_pins sfp1_10gbe/gttxreset]
   connect_bd_net -net qplllock_1 [get_bd_pins qplllock] [get_bd_pins sfp1_10gbe/qplllock]
@@ -246,6 +240,7 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   connect_bd_net -net s_axi_resetn_peripherals_1 [get_bd_pins s_axi_resetn_peripherals] [get_bd_pins sfp1_10gbe/s_axi_aresetn] [get_bd_pins sfp1_dma/axi_resetn]
   connect_bd_net -net s_axis_aresetn_1 [get_bd_pins tx_path_aresetn] [get_bd_pins sfp1_tx_fifo/s_axis_aresetn]
   connect_bd_net -net s_axis_aresetn_2 [get_bd_pins rx_path_aresetn] [get_bd_pins sfp1_rx_fifo/s_axis_aresetn]
+  connect_bd_net -net sfp1_10gbe_tx_disable [get_bd_pins sfp1_tx_disable] [get_bd_pins sfp1_10gbe/tx_disable]
   connect_bd_net -net sfp1_10gbe_txn [get_bd_pins sfp1_txn] [get_bd_pins sfp1_10gbe/txn]
   connect_bd_net -net sfp1_10gbe_txp [get_bd_pins sfp1_txp] [get_bd_pins sfp1_10gbe/txp]
   connect_bd_net -net sfp1_dma_mm2s_introut [get_bd_pins sfp1_dma_tx_introut] [get_bd_pins sfp1_dma/mm2s_introut]
@@ -254,10 +249,11 @@ proc create_hier_cell_sfp1 { parentCell nameHier } {
   connect_bd_net -net sfp1_dma_s2mm_prmry_reset_out_n [get_bd_pins sfp1_10gbe/rx_axis_aresetn] [get_bd_pins sfp1_dma/s2mm_prmry_reset_out_n]
   connect_bd_net -net sfp1_rxn_1 [get_bd_pins sfp1_rxn] [get_bd_pins sfp1_10gbe/rxn]
   connect_bd_net -net sfp1_rxp_1 [get_bd_pins sfp1_rxp] [get_bd_pins sfp1_10gbe/rxp]
+  connect_bd_net -net sfp1_tx_fault_1 [get_bd_pins tx_fault] [get_bd_pins sfp1_10gbe/tx_fault]
+  connect_bd_net -net signal_detect_1 [get_bd_pins signal_detect] [get_bd_pins sfp1_10gbe/signal_detect]
   connect_bd_net -net txuserrdy_1 [get_bd_pins txuserrdy] [get_bd_pins sfp1_10gbe/txuserrdy]
   connect_bd_net -net txusrclk2_1 [get_bd_pins txusrclk2] [get_bd_pins sfp1_10gbe/txusrclk2]
   connect_bd_net -net txusrclk_1 [get_bd_pins txusrclk] [get_bd_pins sfp1_10gbe/txusrclk]
-  connect_bd_net -net vcc_dout [get_bd_pins sfp1_10gbe/signal_detect] [get_bd_pins vcc/dout]
 
   # Restore current instance
   current_bd_instance $oldCurInst
@@ -327,18 +323,15 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   create_bd_pin -dir O -type intr sfp0_dma_tx_introut
   create_bd_pin -dir I sfp0_rxn
   create_bd_pin -dir I sfp0_rxp
+  create_bd_pin -dir O sfp0_tx_disable
   create_bd_pin -dir O sfp0_txn
   create_bd_pin -dir O sfp0_txp
+  create_bd_pin -dir I signal_detect
+  create_bd_pin -dir I tx_fault
   create_bd_pin -dir I -type rst tx_path_aresetn
   create_bd_pin -dir O txuserrdy_out
   create_bd_pin -dir O -type clk txusrclk2_out
   create_bd_pin -dir O -type clk txusrclk_out
-
-  # Create instance: gnd, and set properties
-  set gnd [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 gnd ]
-  set_property -dict [ list \
-   CONFIG.CONST_VAL {0} \
- ] $gnd
 
   # Create instance: reset_n, and set properties
   set reset_n [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_vector_logic:2.0 reset_n ]
@@ -384,6 +377,8 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   # Create instance: sfp0_dma, and set properties
   set sfp0_dma [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_dma:7.1 sfp0_dma ]
   set_property -dict [ list \
+   CONFIG.c_include_mm2s_dre {1} \
+   CONFIG.c_include_s2mm_dre {1} \
    CONFIG.c_m_axi_mm2s_data_width {64} \
    CONFIG.c_m_axis_mm2s_tdata_width {64} \
    CONFIG.c_mm2s_burst_size {256} \
@@ -394,19 +389,16 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   # Create instance: sfp0_rx_fifo, and set properties
   set sfp0_rx_fifo [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 sfp0_rx_fifo ]
   set_property -dict [ list \
-   CONFIG.FIFO_DEPTH {32768} \
+   CONFIG.FIFO_DEPTH {2048} \
    CONFIG.FIFO_MODE {2} \
  ] $sfp0_rx_fifo
 
   # Create instance: sfp0_tx_fifo, and set properties
   set sfp0_tx_fifo [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 sfp0_tx_fifo ]
   set_property -dict [ list \
-   CONFIG.FIFO_DEPTH {32768} \
+   CONFIG.FIFO_DEPTH {2048} \
    CONFIG.FIFO_MODE {2} \
  ] $sfp0_tx_fifo
-
-  # Create instance: vcc, and set properties
-  set vcc [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 vcc ]
 
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins S_AXI_SFP0_DMA] [get_bd_intf_pins sfp0_dma/S_AXI_LITE]
@@ -420,7 +412,6 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   connect_bd_intf_net -intf_net sfp0_tx_fifo_M_AXIS [get_bd_intf_pins sfp0_10gbe/s_axis_tx] [get_bd_intf_pins sfp0_tx_fifo/M_AXIS]
 
   # Create port connections
-  connect_bd_net -net gnd_dout [get_bd_pins gnd/dout] [get_bd_pins sfp0_10gbe/tx_fault]
   connect_bd_net -net gtrxreset_n_Res [get_bd_pins rx_path_aresetn] [get_bd_pins sfp0_rx_fifo/s_axis_aresetn]
   connect_bd_net -net gttxreset_n_Res [get_bd_pins tx_path_aresetn] [get_bd_pins sfp0_tx_fifo/s_axis_aresetn]
   connect_bd_net -net phy_refclk_n_1 [get_bd_pins phy_refclk_n] [get_bd_pins sfp0_10gbe/refclk_n]
@@ -436,6 +427,7 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   connect_bd_net -net sfp0_10gbe_qplloutclk_out [get_bd_pins qplloutclk_out] [get_bd_pins sfp0_10gbe/qplloutclk_out]
   connect_bd_net -net sfp0_10gbe_qplloutrefclk_out [get_bd_pins qplloutrefclk_out] [get_bd_pins sfp0_10gbe/qplloutrefclk_out]
   connect_bd_net -net sfp0_10gbe_reset_counter_done_out [get_bd_pins reset_counter_done_out] [get_bd_pins sfp0_10gbe/reset_counter_done_out]
+  connect_bd_net -net sfp0_10gbe_tx_disable [get_bd_pins sfp0_tx_disable] [get_bd_pins sfp0_10gbe/tx_disable]
   connect_bd_net -net sfp0_10gbe_txn [get_bd_pins sfp0_txn] [get_bd_pins sfp0_10gbe/txn]
   connect_bd_net -net sfp0_10gbe_txp [get_bd_pins sfp0_txp] [get_bd_pins sfp0_10gbe/txp]
   connect_bd_net -net sfp0_10gbe_txuserrdy_out [get_bd_pins txuserrdy_out] [get_bd_pins sfp0_10gbe/txuserrdy_out]
@@ -447,7 +439,8 @@ proc create_hier_cell_sfp0 { parentCell nameHier } {
   connect_bd_net -net sfp0_dma_s2mm_prmry_reset_out_n [get_bd_pins sfp0_10gbe/rx_axis_aresetn] [get_bd_pins sfp0_dma/s2mm_prmry_reset_out_n]
   connect_bd_net -net sfp0_rxn_1 [get_bd_pins sfp0_rxn] [get_bd_pins sfp0_10gbe/rxn]
   connect_bd_net -net sfp0_rxp_1 [get_bd_pins sfp0_rxp] [get_bd_pins sfp0_10gbe/rxp]
-  connect_bd_net -net vcc_dout [get_bd_pins sfp0_10gbe/signal_detect] [get_bd_pins vcc/dout]
+  connect_bd_net -net sfp0_tx_fault_1 [get_bd_pins tx_fault] [get_bd_pins sfp0_10gbe/tx_fault]
+  connect_bd_net -net signal_detect_1 [get_bd_pins signal_detect] [get_bd_pins sfp0_10gbe/signal_detect]
 
   # Restore current instance
   current_bd_instance $oldCurInst
@@ -520,8 +513,11 @@ proc create_hier_cell_hdmi_out { parentCell nameHier } {
   # Create instance: vdma_hdmi_out, and set properties
   set vdma_hdmi_out [ create_bd_cell -type ip -vlnv analog.com:user:axi_dmac:1.0 vdma_hdmi_out ]
   set_property -dict [ list \
+   CONFIG.ALLOW_ASYM_MEM {1} \
    CONFIG.CYCLIC {true} \
    CONFIG.DMA_2D_TRANSFER {true} \
+   CONFIG.DMA_AXI_PROTOCOL_DEST {0} \
+   CONFIG.DMA_AXI_PROTOCOL_SRC {1} \
    CONFIG.DMA_TYPE_DEST {1} \
    CONFIG.DMA_TYPE_SRC {0} \
  ] $vdma_hdmi_out
@@ -603,14 +599,20 @@ proc create_hier_cell_ethernet_10gbe { parentCell nameHier } {
   create_bd_pin -dir I -type rst s_axi_resetn_peripherals
   create_bd_pin -dir O -type intr sfp0_dma_rx_introut
   create_bd_pin -dir O -type intr sfp0_dma_tx_introut
+  create_bd_pin -dir I -from 0 -to 0 sfp0_rx_loss
   create_bd_pin -dir I sfp0_rxn
   create_bd_pin -dir I sfp0_rxp
+  create_bd_pin -dir O sfp0_tx_disable
+  create_bd_pin -dir I sfp0_tx_fault
   create_bd_pin -dir O sfp0_txn
   create_bd_pin -dir O sfp0_txp
   create_bd_pin -dir O -type intr sfp1_dma_rx_introut
   create_bd_pin -dir O -type intr sfp1_dma_tx_introut
+  create_bd_pin -dir I -from 0 -to 0 sfp1_rx_loss
   create_bd_pin -dir I sfp1_rxn
   create_bd_pin -dir I sfp1_rxp
+  create_bd_pin -dir O sfp1_tx_disable
+  create_bd_pin -dir I sfp1_tx_fault
   create_bd_pin -dir O sfp1_txn
   create_bd_pin -dir O sfp1_txp
 
@@ -640,8 +642,24 @@ proc create_hier_cell_ethernet_10gbe { parentCell nameHier } {
   # Create instance: sfp0
   create_hier_cell_sfp0 $hier_obj sfp0
 
+  # Create instance: sfp0_rx_loss_to_signal_detect, and set properties
+  set sfp0_rx_loss_to_signal_detect [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_vector_logic:2.0 sfp0_rx_loss_to_signal_detect ]
+  set_property -dict [ list \
+   CONFIG.C_OPERATION {not} \
+   CONFIG.C_SIZE {1} \
+   CONFIG.LOGO_FILE {data/sym_notgate.png} \
+ ] $sfp0_rx_loss_to_signal_detect
+
   # Create instance: sfp1
   create_hier_cell_sfp1 $hier_obj sfp1
+
+  # Create instance: sfp1_rx_loss_to_signal_detect, and set properties
+  set sfp1_rx_loss_to_signal_detect [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_vector_logic:2.0 sfp1_rx_loss_to_signal_detect ]
+  set_property -dict [ list \
+   CONFIG.C_OPERATION {not} \
+   CONFIG.C_SIZE {1} \
+   CONFIG.LOGO_FILE {data/sym_notgate.png} \
+ ] $sfp1_rx_loss_to_signal_detect
 
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins M_DMA_10GBE] [get_bd_intf_pins dma_interconnect/M00_AXI]
@@ -671,21 +689,29 @@ proc create_hier_cell_ethernet_10gbe { parentCell nameHier } {
   connect_bd_net -net sfp0_qplloutclk_out [get_bd_pins sfp0/qplloutclk_out] [get_bd_pins sfp1/qplloutclk]
   connect_bd_net -net sfp0_qplloutrefclk_out [get_bd_pins sfp0/qplloutrefclk_out] [get_bd_pins sfp1/qplloutrefclk]
   connect_bd_net -net sfp0_reset_counter_done_out [get_bd_pins sfp0/reset_counter_done_out] [get_bd_pins sfp1/reset_counter_done]
+  connect_bd_net -net sfp0_rx_loss_1 [get_bd_pins sfp0_rx_loss] [get_bd_pins sfp0_rx_loss_to_signal_detect/Op1]
   connect_bd_net -net sfp0_rxn_1 [get_bd_pins sfp0_rxn] [get_bd_pins sfp0/sfp0_rxn]
   connect_bd_net -net sfp0_rxp_1 [get_bd_pins sfp0_rxp] [get_bd_pins sfp0/sfp0_rxp]
   connect_bd_net -net sfp0_sfp0_dma_rx_introut [get_bd_pins sfp0_dma_rx_introut] [get_bd_pins sfp0/sfp0_dma_rx_introut]
   connect_bd_net -net sfp0_sfp0_dma_tx_introut [get_bd_pins sfp0_dma_tx_introut] [get_bd_pins sfp0/sfp0_dma_tx_introut]
+  connect_bd_net -net sfp0_sfp0_tx_disable [get_bd_pins sfp0_tx_disable] [get_bd_pins sfp0/sfp0_tx_disable]
   connect_bd_net -net sfp0_sfp0_txn [get_bd_pins sfp0_txn] [get_bd_pins sfp0/sfp0_txn]
   connect_bd_net -net sfp0_sfp0_txp [get_bd_pins sfp0_txp] [get_bd_pins sfp0/sfp0_txp]
+  connect_bd_net -net sfp0_tx_fault_1 [get_bd_pins sfp0_tx_fault] [get_bd_pins sfp0/tx_fault]
   connect_bd_net -net sfp0_txuserrdy_out [get_bd_pins sfp0/txuserrdy_out] [get_bd_pins sfp1/txuserrdy]
   connect_bd_net -net sfp0_txusrclk2_out [get_bd_pins sfp0/txusrclk2_out] [get_bd_pins sfp1/txusrclk2]
   connect_bd_net -net sfp0_txusrclk_out [get_bd_pins sfp0/txusrclk_out] [get_bd_pins sfp1/txusrclk]
+  connect_bd_net -net sfp1_rx_loss_1 [get_bd_pins sfp1_rx_loss] [get_bd_pins sfp1_rx_loss_to_signal_detect/Op1]
   connect_bd_net -net sfp1_rxn_1 [get_bd_pins sfp1_rxn] [get_bd_pins sfp1/sfp1_rxn]
   connect_bd_net -net sfp1_rxp_1 [get_bd_pins sfp1_rxp] [get_bd_pins sfp1/sfp1_rxp]
   connect_bd_net -net sfp1_sfp1_dma_rx_introut [get_bd_pins sfp1_dma_rx_introut] [get_bd_pins sfp1/sfp1_dma_rx_introut]
   connect_bd_net -net sfp1_sfp1_dma_tx_introut [get_bd_pins sfp1_dma_tx_introut] [get_bd_pins sfp1/sfp1_dma_tx_introut]
+  connect_bd_net -net sfp1_sfp1_tx_disable [get_bd_pins sfp1_tx_disable] [get_bd_pins sfp1/sfp1_tx_disable]
   connect_bd_net -net sfp1_sfp1_txn [get_bd_pins sfp1_txn] [get_bd_pins sfp1/sfp1_txn]
   connect_bd_net -net sfp1_sfp1_txp [get_bd_pins sfp1_txp] [get_bd_pins sfp1/sfp1_txp]
+  connect_bd_net -net sfp1_tx_fault_1 [get_bd_pins sfp1_tx_fault] [get_bd_pins sfp1/tx_fault]
+  connect_bd_net -net util_vector_logic_1_Res [get_bd_pins sfp0/signal_detect] [get_bd_pins sfp0_rx_loss_to_signal_detect/Res]
+  connect_bd_net -net util_vector_logic_3_Res [get_bd_pins sfp1/signal_detect] [get_bd_pins sfp1_rx_loss_to_signal_detect/Res]
 
   # Restore current instance
   current_bd_instance $oldCurInst
@@ -735,19 +761,25 @@ proc create_root_design { parentCell } {
   set hdmi_hsync [ create_bd_port -dir O hdmi_hsync ]
   set hdmi_out_clk [ create_bd_port -dir O -type clk hdmi_out_clk ]
   set hdmi_vsync [ create_bd_port -dir O hdmi_vsync ]
+  set led1 [ create_bd_port -dir O led1 ]
   set phy_refclk_n [ create_bd_port -dir I phy_refclk_n ]
   set phy_refclk_p [ create_bd_port -dir I phy_refclk_p ]
-  set qplllock [ create_bd_port -dir O qplllock ]
   set reset [ create_bd_port -dir I -type rst reset ]
   set_property -dict [ list \
    CONFIG.POLARITY {ACTIVE_HIGH} \
  ] $reset
+  set sfp0_rx_loss [ create_bd_port -dir I sfp0_rx_loss ]
   set sfp0_rxn [ create_bd_port -dir I sfp0_rxn ]
   set sfp0_rxp [ create_bd_port -dir I sfp0_rxp ]
+  set sfp0_tx_disable [ create_bd_port -dir O sfp0_tx_disable ]
+  set sfp0_tx_fault [ create_bd_port -dir I sfp0_tx_fault ]
   set sfp0_txn [ create_bd_port -dir O sfp0_txn ]
   set sfp0_txp [ create_bd_port -dir O sfp0_txp ]
+  set sfp1_rx_loss [ create_bd_port -dir I sfp1_rx_loss ]
   set sfp1_rxn [ create_bd_port -dir I sfp1_rxn ]
   set sfp1_rxp [ create_bd_port -dir I sfp1_rxp ]
+  set sfp1_tx_disable [ create_bd_port -dir O sfp1_tx_disable ]
+  set sfp1_tx_fault [ create_bd_port -dir I sfp1_tx_fault ]
   set sfp1_txn [ create_bd_port -dir O sfp1_txn ]
   set sfp1_txp [ create_bd_port -dir O sfp1_txp ]
 
@@ -1199,11 +1231,13 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net processing_system7_0_FIXED_IO [get_bd_intf_ports FIXED_IO] [get_bd_intf_pins processing_system7_0/FIXED_IO]
 
   # Create port connections
-  connect_bd_net -net ethernet_10gbe_qplllock [get_bd_ports qplllock] [get_bd_pins ethernet_10gbe/qplllock]
+  connect_bd_net -net ethernet_10gbe_qplllock [get_bd_ports led1] [get_bd_pins ethernet_10gbe/qplllock]
   connect_bd_net -net ethernet_10gbe_s2mm_introut [get_bd_pins ethernet_10gbe/sfp0_dma_rx_introut] [get_bd_pins int_concat/In2]
   connect_bd_net -net ethernet_10gbe_sfp0_dma_tx_introut [get_bd_pins ethernet_10gbe/sfp0_dma_tx_introut] [get_bd_pins int_concat/In1]
+  connect_bd_net -net ethernet_10gbe_sfp0_tx_disable [get_bd_ports sfp0_tx_disable] [get_bd_pins ethernet_10gbe/sfp0_tx_disable]
   connect_bd_net -net ethernet_10gbe_sfp1_dma_rx_introut [get_bd_pins ethernet_10gbe/sfp1_dma_rx_introut] [get_bd_pins int_concat/In4]
   connect_bd_net -net ethernet_10gbe_sfp1_dma_tx_introut [get_bd_pins ethernet_10gbe/sfp1_dma_tx_introut] [get_bd_pins int_concat/In3]
+  connect_bd_net -net ethernet_10gbe_sfp1_tx_disable [get_bd_ports sfp1_tx_disable] [get_bd_pins ethernet_10gbe/sfp1_tx_disable]
   connect_bd_net -net ethernet_10gbe_sfp1_txn [get_bd_ports sfp1_txn] [get_bd_pins ethernet_10gbe/sfp1_txn]
   connect_bd_net -net ethernet_10gbe_sfp1_txp [get_bd_ports sfp1_txp] [get_bd_pins ethernet_10gbe/sfp1_txp]
   connect_bd_net -net ethernet_10gbe_txn [get_bd_ports sfp0_txn] [get_bd_pins ethernet_10gbe/sfp0_txn]
@@ -1224,8 +1258,12 @@ proc create_root_design { parentCell } {
   connect_bd_net -net refclk_p_1 [get_bd_ports phy_refclk_p] [get_bd_pins ethernet_10gbe/phy_refclk_p]
   connect_bd_net -net rxn_1 [get_bd_ports sfp0_rxn] [get_bd_pins ethernet_10gbe/sfp0_rxn]
   connect_bd_net -net rxp_1 [get_bd_ports sfp0_rxp] [get_bd_pins ethernet_10gbe/sfp0_rxp]
+  connect_bd_net -net sfp0_rx_loss_1 [get_bd_ports sfp0_rx_loss] [get_bd_pins ethernet_10gbe/sfp0_rx_loss]
+  connect_bd_net -net sfp0_tx_fault_1 [get_bd_ports sfp0_tx_fault] [get_bd_pins ethernet_10gbe/sfp0_tx_fault]
+  connect_bd_net -net sfp1_rx_loss_1 [get_bd_ports sfp1_rx_loss] [get_bd_pins ethernet_10gbe/sfp1_rx_loss]
   connect_bd_net -net sfp1_rxn_0_1 [get_bd_ports sfp1_rxn] [get_bd_pins ethernet_10gbe/sfp1_rxn]
   connect_bd_net -net sfp1_rxp_0_1 [get_bd_ports sfp1_rxp] [get_bd_pins ethernet_10gbe/sfp1_rxp]
+  connect_bd_net -net sfp1_tx_fault_1 [get_bd_ports sfp1_tx_fault] [get_bd_pins ethernet_10gbe/sfp1_tx_fault]
   connect_bd_net -net xlconcat_0_dout [get_bd_pins int_concat/dout] [get_bd_pins processing_system7_0/IRQ_F2P]
 
   # Create address segments

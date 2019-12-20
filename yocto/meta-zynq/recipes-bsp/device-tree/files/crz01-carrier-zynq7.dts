@@ -102,7 +102,10 @@
 
 		local-mac-address = [00 0a 35 00 00 00];
 		phy-mode = "base-r";
-		xlnx,rxmem = <0x8000>;
+		xlnx,rxmem = <0x4000>;
+		//FIXME: checksum offloading is broken somehow?
+		xlnx,txcsum = <0>;
+		xlnx,rxcsum = <0>;
 
 		ethernet_10gbe_sfp0_10gbe_mdio: mdio {
 			#address-cells = <1>;
@@ -125,6 +128,7 @@
 		interrupts = <0 30 4 0 31 4>;
 
 		xlnx,addrwidth = /bits/ 8 <0x20>;
+		xlnx,include-dre;	//NOTE: without DRE, the driver panics when using jumbo frames > 8192 bytes
 	};
 
 	ethernet_10gbe_sfp1_10gbe: ethernet@40030000 {
@@ -138,7 +142,10 @@
 
 		local-mac-address = [00 0a 35 00 00 01];
 		phy-mode = "base-r";
-		xlnx,rxmem = <0x8000>;
+		xlnx,rxmem = <0x4000>;
+		//FIXME: checksum offloading is broken somehow?
+		xlnx,txcsum = <0>;
+		xlnx,rxcsum = <0>;
 
 		ethernet_10gbe_sfp1_10gbe_mdio: mdio {
 			#address-cells = <1>;
@@ -161,6 +168,7 @@
 		interrupts = <0 32 4 0 33 4>;
 
 		xlnx,addrwidth = /bits/ 8 <0x20>;
+		xlnx,include-dre;	//NOTE: without DRE, the driver panics when using jumbo frames > 8192 bytes
 	};
 };
 

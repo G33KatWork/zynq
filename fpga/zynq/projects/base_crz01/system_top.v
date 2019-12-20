@@ -27,16 +27,22 @@ module system_top
     hdmi_hsync,
     hdmi_out_clk,
     hdmi_vsync,
+    led1,
     phy_refclk_n,
     phy_refclk_p,
-    qplllock,
     reset,
+    sfp0_rx_loss,
     sfp0_rxn,
     sfp0_rxp,
+    sfp0_tx_disable,
+    sfp0_tx_fault,
     sfp0_txn,
     sfp0_txp,
+    sfp1_rx_loss,
     sfp1_rxn,
     sfp1_rxp,
+    sfp1_tx_disable,
+    sfp1_tx_fault,
     sfp1_txn,
     sfp1_txp);
   inout [14:0]DDR_addr;
@@ -65,16 +71,22 @@ module system_top
   output hdmi_hsync;
   output hdmi_out_clk;
   output hdmi_vsync;
+  output led1;
   input phy_refclk_n;
   input phy_refclk_p;
-  output qplllock;
   input reset;
+  input sfp0_rx_loss;
   input sfp0_rxn;
   input sfp0_rxp;
+  output sfp0_tx_disable;
+  input sfp0_tx_fault;
   output sfp0_txn;
   output sfp0_txp;
+  input sfp1_rx_loss;
   input sfp1_rxn;
   input sfp1_rxp;
+  output sfp1_tx_disable;
+  input sfp1_tx_fault;
   output sfp1_txn;
   output sfp1_txp;
 
@@ -104,16 +116,22 @@ module system_top
   wire hdmi_hsync;
   wire hdmi_out_clk;
   wire hdmi_vsync;
+  wire led1;
   wire phy_refclk_n;
   wire phy_refclk_p;
-  wire qplllock;
   wire reset;
+  wire sfp0_rx_loss;
   wire sfp0_rxn;
   wire sfp0_rxp;
+  wire sfp0_tx_disable;
+  wire sfp0_tx_fault;
   wire sfp0_txn;
   wire sfp0_txp;
+  wire sfp1_rx_loss;
   wire sfp1_rxn;
   wire sfp1_rxp;
+  wire sfp1_tx_disable;
+  wire sfp1_tx_fault;
   wire sfp1_txn;
   wire sfp1_txp;
 
@@ -144,16 +162,22 @@ module system_top
         .hdmi_hsync(hdmi_hsync),
         .hdmi_out_clk(hdmi_out_clk),
         .hdmi_vsync(hdmi_vsync),
+        .led1(led1),
         .phy_refclk_n(phy_refclk_n),
         .phy_refclk_p(phy_refclk_p),
-        .qplllock(qplllock),
         .reset(reset),
+        .sfp0_rx_loss(sfp0_rx_loss),
         .sfp0_rxn(sfp0_rxn),
         .sfp0_rxp(sfp0_rxp),
+        .sfp0_tx_disable(sfp0_tx_disable),
+        .sfp0_tx_fault(sfp0_tx_fault),
         .sfp0_txn(sfp0_txn),
         .sfp0_txp(sfp0_txp),
+        .sfp1_rx_loss(sfp1_rx_loss),
         .sfp1_rxn(sfp1_rxn),
         .sfp1_rxp(sfp1_rxp),
+        .sfp1_tx_disable(sfp1_tx_disable),
+        .sfp1_tx_fault(sfp1_tx_fault),
         .sfp1_txn(sfp1_txn),
         .sfp1_txp(sfp1_txp));
 endmodule
