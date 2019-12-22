@@ -11,3 +11,7 @@ SPL_BINARY = "spl/boot.bin"
 SERIAL_CONSOLE = "115200 ttyPS0"
 
 MACHINE_DEVICETREE = "crz01-carrier-zynq7"
+
+IMAGE_BOOT_FILES += "\
+    userenv.txt \
+    "

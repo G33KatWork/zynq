@@ -1,0 +1,1 @@
+overlays=devicetree/hdmi.dtbo devicetree/sfp0.dtbo devicetree/sfp1.dtbo

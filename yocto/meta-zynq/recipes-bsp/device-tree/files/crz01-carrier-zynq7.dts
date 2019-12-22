@@ -25,151 +25,11 @@
 		compatible = "usb-nop-xceiv";
 		#phy-cells = <0>;
 	};
-
-	hdmi-out {
-		compatible = "hdmi-connector";
-		type = "a";
-
-		port {
-			hdmi_con_out: endpoint {
-				remote-endpoint = <&adv7511_out>;
-			};
-		};
-	};
 };
 
 &amba {
-    /* empty defintion for kernels that don't have qspi node */
-    qspi: spi@e000d000 { };
-
-	hdmi_dma: axi-dmac@43010000 {
-		compatible = "adi,axi-dmac-1.00.a";
-		reg = <0x41010000 0x10000>;
-		#dma-cells = <1>;
-		interrupts = <0 29 4>;
-		clocks = <&clkc 16>;
-
-		adi,channels {
-			#size-cells = <0>;
-			#address-cells = <1>;
-
-			dma-channel@0 {
-				reg = <0>;
-				adi,source-bus-width = <64>;
-				adi,source-bus-type = <0>;
-				adi,destination-bus-width = <64>;
-				adi,destination-bus-type = <1>;
-			};
-		};
-	};
-
-	hdmi_clock: axi-clkgen@43000000 {
-		compatible = "adi,axi-clkgen-2.00.a";
-		reg = <0x41000000 0x10000>;
-		#clock-cells = <0>;
-		clocks = <&clkc 16>;
-	};
-
-	hdmi_tx: axi-hdmi@43020000 {
-		compatible = "adi,axi-hdmi-tx-1.00.a";
-		reg = <0x41020000 0x10000>;
-		dmas = <&hdmi_dma 0>;
-		dma-names = "video";
-		clocks = <&hdmi_clock>;
-
-		port {
-			axi_hdmi_out: endpoint {
-				remote-endpoint = <&adv7511_in>;
-			};
-		};
-	};
-
-
-	sfp_coreclk_out: sfp_coreclk_out {
-		#clock-cells = <0>;
-		clock-frequency = <156250000>;
-		compatible = "fixed-clock";
-	};
-
-	ethernet_10gbe_sfp0_10gbe: ethernet@40010000 {
-		reg = <0x40010000 0x10000>;
-		compatible = "xlnx,ten-gig-eth-mac";
-
-		axistream-connected = <&ethernet_10gbe_sfp0_dma>;
-
-		clock-names = "dclk", "s_axi_aclk";
-		clocks = <&clkc 15>, <&clkc 15>;
-
-		local-mac-address = [00 0a 35 00 00 00];
-		phy-mode = "base-r";
-		xlnx,rxmem = <0x4000>;
-		//FIXME: checksum offloading is broken somehow?
-		xlnx,txcsum = <0>;
-		xlnx,rxcsum = <0>;
-
-		ethernet_10gbe_sfp0_10gbe_mdio: mdio {
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-	};
-
-	ethernet_10gbe_sfp0_dma: dma@40000000 {
-		reg = <0x40000000 0x10000>;
-		compatible = "xlnx,eth-dma";
-
-		#dma-cells = <1>;
-		axistream-connected = <&ethernet_10gbe_sfp0_10gbe>;
-
-		clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-		clocks = <&clkc 15>, <&clkc 15>, <&sfp_coreclk_out>, <&sfp_coreclk_out>;
-
-		interrupt-names = "mm2s_introut", "s2mm_introut";
-		interrupt-parent = <&intc>;
-		interrupts = <0 30 4 0 31 4>;
-
-		xlnx,addrwidth = /bits/ 8 <0x20>;
-		xlnx,include-dre;	//NOTE: without DRE, the driver panics when using jumbo frames > 8192 bytes
-	};
-
-	ethernet_10gbe_sfp1_10gbe: ethernet@40030000 {
-		reg = <0x40030000 0x10000>;
-		compatible = "xlnx,ten-gig-eth-mac";
-
-		axistream-connected = <&ethernet_10gbe_sfp1_dma>;
-
-		clock-names = "dclk", "s_axi_aclk";
-		clocks = <&clkc 15>, <&clkc 15>;
-
-		local-mac-address = [00 0a 35 00 00 01];
-		phy-mode = "base-r";
-		xlnx,rxmem = <0x4000>;
-		//FIXME: checksum offloading is broken somehow?
-		xlnx,txcsum = <0>;
-		xlnx,rxcsum = <0>;
-
-		ethernet_10gbe_sfp1_10gbe_mdio: mdio {
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-	};
-
-	ethernet_10gbe_sfp1_dma: dma@40020000 {
-		reg = <0x40020000 0x10000>;
-		compatible = "xlnx,eth-dma";
-
-		#dma-cells = <1>;
-		axistream-connected = <&ethernet_10gbe_sfp1_10gbe>;
-
-		clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
-		clocks = <&clkc 15>, <&clkc 15>, <&sfp_coreclk_out>, <&sfp_coreclk_out>;
-
-		interrupt-names = "mm2s_introut", "s2mm_introut";
-		interrupt-parent = <&intc>;
-		interrupts = <0 32 4 0 33 4>;
-
-		xlnx,addrwidth = /bits/ 8 <0x20>;
-		xlnx,include-dre;	//NOTE: without DRE, the driver panics when using jumbo frames > 8192 bytes
-	};
+	/* empty defintion for kernels that don't have qspi node */
+	qspi: spi@e000d000 { };
 };
 
 &clkc {
@@ -235,11 +95,12 @@
 		#size-cells = <0>;
 		reg = <0x70>;
 
-		i2c@0 {
+		i2cbus_rtc: i2c@0 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0>;
-			rtc1: ds1337@68 {
+
+			rtc0: ds1337@68 {
 				compatible = "dallas,ds1337";
 				reg = <0x68>;
 				//FIXME: fill this in
@@ -249,47 +110,15 @@
 			};
 		};
 
-		i2c@1 {
+		i2cbus_hdmi: i2c@1 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <1>;
 
-			adv7511: hdmi-tx@39 {
-				compatible = "adi,adv7511";
-				reg = <0x39>, <0x3f>;
-				reg-names = "primary", "edid";
-
-				adi,input-depth = <8>;
-				adi,input-colorspace = "yuv422";
-				adi,input-clock = "1x";
-				adi,input-style = <1>;
-				adi,input-justification = "right";
-				adi,clock-delay = <0>;
-
-				#sound-dai-cells = <0>;
-
-				ports {
-					#address-cells = <1>;
-					#size-cells = <0>;
-
-					port@0 {
-						reg = <0>;
-						adv7511_in: endpoint {
-							remote-endpoint = <&axi_hdmi_out>;
-						};
-					};
-
-					port@1 {
-						reg = <1>;
-						adv7511_out: endpoint {
-							remote-endpoint = <&hdmi_con_out>;
-						};
-					};
-				};
-			};
+			//ADV7511 HDMI
 		};
 
-		i2c@2 {
+		i2cbus_eeprom: i2c@2 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <2>;
@@ -300,7 +129,7 @@
 			};
 		};
 
-		i2c@3 {
+		i2cbus_ext: i2c@3 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <3>;
@@ -308,7 +137,7 @@
 			//Ext I2C
 		};
 
-		i2c@4 {
+		i2cbus_sfp0: i2c@4 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <4>;
@@ -316,7 +145,7 @@
 			//SFP0
 		};
 
-		i2c@5 {
+		i2cbus_ext_3v3: i2c@5 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <5>;
@@ -324,7 +153,7 @@
 			//Ext I2C 3V3
 		};
 
-		i2c@6 {
+		i2cbus_sfp1: i2c@6 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <6>;
@@ -332,7 +161,7 @@
 			//SFP1
 		};
 
-		i2c@7 {
+		i2cbus_qsfp: i2c@7 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <7>;

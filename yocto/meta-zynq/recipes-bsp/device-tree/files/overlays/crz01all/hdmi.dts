@@ -1,0 +1,114 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "xlnx,zynq-crz01";
+
+	fragment@0 {
+		target = <&i2cbus_hdmi>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			adv7511: hdmi-tx@39 {
+				compatible = "adi,adv7511";
+				reg = <0x39>, <0x3f>;
+				reg-names = "primary", "edid";
+
+				adi,input-depth = <8>;
+				adi,input-colorspace = "yuv422";
+				adi,input-clock = "1x";
+				adi,input-style = <1>;
+				adi,input-justification = "right";
+				adi,clock-delay = <0>;
+
+				#sound-dai-cells = <0>;
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						adv7511_in: endpoint {
+							remote-endpoint = <&axi_hdmi_out>;
+						};
+					};
+
+					port@1 {
+						reg = <1>;
+						adv7511_out: endpoint {
+							remote-endpoint = <&hdmi_con_out>;
+						};
+					};
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&amba>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			hdmi_dma: axi-dmac@43010000 {
+				compatible = "adi,axi-dmac-1.00.a";
+				reg = <0x41010000 0x10000>;
+				#dma-cells = <1>;
+				interrupts = <0 29 4>;
+				clocks = <&clkc 16>;
+
+				adi,channels {
+					#size-cells = <0>;
+					#address-cells = <1>;
+
+					dma-channel@0 {
+						reg = <0>;
+						adi,source-bus-width = <64>;
+						adi,source-bus-type = <0>;
+						adi,destination-bus-width = <64>;
+						adi,destination-bus-type = <1>;
+					};
+				};
+			};
+
+			hdmi_clock: axi-clkgen@43000000 {
+				compatible = "adi,axi-clkgen-2.00.a";
+				reg = <0x41000000 0x10000>;
+				#clock-cells = <0>;
+				clocks = <&clkc 16>;
+			};
+
+			hdmi_tx: axi-hdmi@43020000 {
+				compatible = "adi,axi-hdmi-tx-1.00.a";
+				reg = <0x41020000 0x10000>;
+				dmas = <&hdmi_dma 0>;
+				dma-names = "video";
+				clocks = <&hdmi_clock>;
+
+				port {
+					axi_hdmi_out: endpoint {
+						remote-endpoint = <&adv7511_in>;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@3 {
+        target-path = "/";
+        __overlay__ {
+            hdmi-out {
+				compatible = "hdmi-connector";
+				type = "a";
+
+				port {
+					hdmi_con_out: endpoint {
+						remote-endpoint = <&adv7511_out>;
+					};
+				};
+			};
+        };
+    };
+};

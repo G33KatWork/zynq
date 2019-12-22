@@ -20,3 +20,9 @@ SRC_URI_append_autocopterall = " \
 SRC_URI_append_autocopter-microzed-iocc-zynq7 = " \
     file://ofcam.dts \
     "
+
+SRC_URI_append_crz01all = " \
+    file://hdmi.dts \
+    file://sfp0.dts \
+    file://sfp1.dts \
+    "

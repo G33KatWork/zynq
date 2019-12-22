@@ -10,6 +10,7 @@ INHIBIT_DEFAULT_DEPS = "1"
 SRC_URI = "file://boot.cmd"
 SRC_URI_append_autocopter-microzed-iocc-zynq7 = " file://userenv.txt"
 SRC_URI_append_autocopter-picozed-pciecc-zynq7 = " file://userenv.txt"
+SRC_URI_append_crz01all = " file://userenv.txt"
 
 do_compile() {
     mkimage -A arm -T script -C none -a 0 -e 0 -n "Boot script" -d "${WORKDIR}/boot.cmd" boot.scr

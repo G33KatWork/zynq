@@ -1,0 +1,60 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "xlnx,zynq-crz01";
+
+	fragment@0 {
+		target = <&amba>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			sfp_coreclk: sfp_coreclk {
+				#clock-cells = <0>;
+				clock-frequency = <156250000>;
+				compatible = "fixed-clock";
+			};
+
+			ethernet_10gbe_sfp0_10gbe: ethernet@40010000 {
+				reg = <0x40010000 0x10000>;
+				compatible = "xlnx,ten-gig-eth-mac";
+
+				axistream-connected = <&ethernet_10gbe_sfp0_dma>;
+
+				clock-names = "dclk", "s_axi_aclk";
+				clocks = <&clkc 15>, <&clkc 15>;
+
+				local-mac-address = [00 0a 35 00 00 00];
+				phy-mode = "base-r";
+				xlnx,rxmem = <0x4000>;
+				//FIXME: checksum offloading is broken somehow?
+				xlnx,txcsum = <0>;
+				xlnx,rxcsum = <0>;
+
+				ethernet_10gbe_sfp0_10gbe_mdio: mdio {
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+
+			ethernet_10gbe_sfp0_dma: dma@40000000 {
+				reg = <0x40000000 0x10000>;
+				compatible = "xlnx,eth-dma";
+
+				#dma-cells = <1>;
+				axistream-connected = <&ethernet_10gbe_sfp0_10gbe>;
+
+				clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
+				clocks = <&clkc 15>, <&clkc 15>, <&sfp_coreclk>, <&sfp_coreclk>;
+
+				interrupt-names = "mm2s_introut", "s2mm_introut";
+				interrupt-parent = <&intc>;
+				interrupts = <0 30 4 0 31 4>;
+
+				xlnx,addrwidth = /bits/ 8 <0x20>;
+				xlnx,include-dre;	//NOTE: without DRE, the driver panics when using jumbo frames > 8192 bytes
+			};
+		};
+	};
+};
