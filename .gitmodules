@@ -8,3 +8,6 @@
 	path = fpga/zynq/third_party/adi
 	url = https://github.com/analogdevicesinc/hdl.git
 	branch = vivado_19_2_update
+[submodule "fpga/zynq/third_party/fpga-network-stack"]
+	path = fpga/zynq/third_party/fpga-network-stack
+	url = https://github.com/fpgasystems/fpga-network-stack.git

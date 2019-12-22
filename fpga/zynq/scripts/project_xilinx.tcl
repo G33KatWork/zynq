@@ -59,6 +59,7 @@ proc project_create {project_name source_dir part board {mode 0} {parameter_list
   # Set IP core directories
   set ipcore_lib_dirs $root_dir/ip_repo
   lappend ipcore_lib_dirs $root_dir/third_party/adi/library
+  lappend ipcore_lib_dirs $root_dir/third_party/fpga-network-stack/iprepo
   set_property ip_repo_paths $ipcore_lib_dirs [current_fileset]
   update_ip_catalog
 

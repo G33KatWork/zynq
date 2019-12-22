@@ -14,6 +14,7 @@ COMPATIBLE_MACHINE = "$^"
 COMPATIBLE_MACHINE_base-microzed-iocc-zynq7 = "base-microzed-iocc-zynq7"
 COMPATIBLE_MACHINE_base-picozed-pciecc-zynq7 = "base-picozed-pciecc-zynq7"
 COMPATIBLE_MACHINE_base-crz01-carrier-zynq7 = "base-crz01-carrier-zynq7"
+COMPATIBLE_MACHINE_fixelplut-crz01-carrier-zynq7 = "fixelplut-crz01-carrier-zynq7"
 COMPATIBLE_MACHINE_autocopter-microzed-iocc-zynq7 = "autocopter-microzed-iocc-zynq7"
 COMPATIBLE_MACHINE_autocopter-picozed-pciecc-zynq7 = "autocopter-picozed-pciecc-zynq7"
 
