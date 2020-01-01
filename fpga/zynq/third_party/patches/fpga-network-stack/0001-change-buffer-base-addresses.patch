@@ -1,0 +1,82 @@
+diff --git a/hls/toe/rx_app_stream_if/rx_app_stream_if.cpp b/hls/toe/rx_app_stream_if/rx_app_stream_if.cpp
+index d6d8b8e..02f7c91 100755
+--- a/hls/toe/rx_app_stream_if/rx_app_stream_if.cpp
++++ b/hls/toe/rx_app_stream_if/rx_app_stream_if.cpp
+@@ -79,8 +79,8 @@ void rx_app_stream_if(hls::stream<appReadRequest>&		appRxDataReq,
+ 				rxSarAppd	rxSar = rxSar2rxApp_upd_rsp.read();
+ 				appRxDataRspMetadata.write(rxSar.sessionID);
+ #if !(RX_DDR_BYPASS)
+-				ap_uint<32> pkgAddr = 0;
+-				pkgAddr(29, WINDOW_BITS) = rxSar.sessionID(13, 0);
++				ap_uint<32> pkgAddr = 0x80000000;
++				pkgAddr(25, WINDOW_BITS) = rxSar.sessionID(13, 0);
+ 				pkgAddr(WINDOW_BITS-1, 0) = rxSar.appd;
+ 				rxBufferReadCmd.write(mmCmd(pkgAddr, rasi_readLength));
+ #else
+diff --git a/hls/toe/rx_engine/rx_engine.cpp b/hls/toe/rx_engine/rx_engine.cpp
+index ca615d9..4fffe1c 100755
+--- a/hls/toe/rx_engine/rx_engine.cpp
++++ b/hls/toe/rx_engine/rx_engine.cpp
+@@ -1083,8 +1083,8 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
+ 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, newRecvd));
+ 							// Build memory address
+ 							ap_uint<32> pkgAddr;
+-							pkgAddr(31, 30) = 0x0;
+-							pkgAddr(29, WINDOW_BITS) = fsm_meta.sessionID(13, 0);
++							pkgAddr = 0x80000000;
++							pkgAddr(25, WINDOW_BITS) = fsm_meta.sessionID(13, 0);
+ 							pkgAddr(WINDOW_BITS-1, 0) = fsm_meta.meta.seqNumb(WINDOW_BITS-1, 0);
+ #if !(RX_DDR_BYPASS)
+ 							rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
+@@ -1274,8 +1274,8 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
+ 					if (fsm_meta.meta.length != 0)
+ 					{
+ 						ap_uint<32> pkgAddr;
+-						pkgAddr(31, 30) = 0x0;
+-						pkgAddr(29, WINDOW_BITS) = fsm_meta.sessionID(13, 0);
++						pkgAddr = 0x80000000;
++						pkgAddr(25, WINDOW_BITS) = fsm_meta.sessionID(13, 0);
+ 						pkgAddr(WINDOW_BITS-1, 0) = fsm_meta.meta.seqNumb(WINDOW_BITS-1, 0);
+ #if !(RX_DDR_BYPASS)
+ 						rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
+diff --git a/hls/toe/tx_app_stream_if/tx_app_stream_if.cpp b/hls/toe/tx_app_stream_if/tx_app_stream_if.cpp
+index c0afdf3..758b398 100755
+--- a/hls/toe/tx_app_stream_if/tx_app_stream_if.cpp
++++ b/hls/toe/tx_app_stream_if/tx_app_stream_if.cpp
+@@ -106,8 +106,8 @@ void tasi_metaLoader(	stream<appTxMeta>&			appTxDataReqMetaData,
+ 			{
+ 				// TODO there seems some redundancy
+ 				ap_uint<32> pkgAddr;
+-				pkgAddr(31, 30) = 0x01;
+-				pkgAddr(29, WINDOW_BITS) = tasi_writeMeta.sessionID(13, 0);
++				pkgAddr = 0x84000000;
++				pkgAddr(25, WINDOW_BITS) = tasi_writeMeta.sessionID(13, 0);
+ 				pkgAddr(WINDOW_BITS-1, 0) = writeSar.mempt;
+ 
+ 				tasi_meta2pkgPushCmd.write(mmCmd(pkgAddr, tasi_writeMeta.length));
+diff --git a/hls/toe/tx_engine/tx_engine.cpp b/hls/toe/tx_engine/tx_engine.cpp
+index c5ab022..a963632 100755
+--- a/hls/toe/tx_engine/tx_engine.cpp
++++ b/hls/toe/tx_engine/tx_engine.cpp
+@@ -217,8 +217,8 @@ void metaLoader(hls::stream<extendedEvent>&				eventEng2txEng_event,
+ 				currLength = (txSar.app - ((ap_uint<WINDOW_BITS>)txSar.not_ackd));
+ 				// Construct address before modifying txSar.not_ackd
+ 				ap_uint<32> pkgAddr;
+-				pkgAddr(31, 30) = 0x01;
+-				pkgAddr(29, WINDOW_BITS) = ml_curEvent.sessionID(13, 0);
++				pkgAddr = 0x84000000;
++				pkgAddr(25, WINDOW_BITS) = ml_curEvent.sessionID(13, 0);
+ 				pkgAddr(WINDOW_BITS-1, 0) = txSar.not_ackd(WINDOW_BITS-1, 0); //ml_curEvent.address;
+ 
+ 
+@@ -333,8 +333,8 @@ void metaLoader(hls::stream<extendedEvent>&				eventEng2txEng_event,
+ 
+ 				// Construct address before modifying txSar.ackd
+ 				ap_uint<32> pkgAddr;
+-				pkgAddr(31, 30) = 0x01;
+-				pkgAddr(29, WINDOW_BITS) = ml_curEvent.sessionID(13, 0);
++				pkgAddr = 0x84000000;
++				pkgAddr(25, WINDOW_BITS) = ml_curEvent.sessionID(13, 0);
+ 				pkgAddr(WINDOW_BITS-1, 0) = txSar.ackd(WINDOW_BITS-1, 0); //ml_curEvent.address;
+ 
+ 				// Decrease Slow Start Threshold, only on first RT from retransmitTimer

@@ -308,13 +308,13 @@ proc create_hier_cell_tcp { parentCell nameHier } {
   current_bd_instance $hier_obj
 
   # Create interface pins
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_WRITE
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_WRITE
 
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 m_axis_tcp_data
 
@@ -348,6 +348,8 @@ proc create_hier_cell_tcp { parentCell nameHier } {
   set datamover_rx [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_datamover:5.1 datamover_rx ]
   set_property -dict [ list \
    CONFIG.c_dummy {1} \
+   CONFIG.c_include_mm2s_dre {true} \
+   CONFIG.c_include_s2mm_dre {true} \
    CONFIG.c_m_axi_mm2s_data_width {64} \
    CONFIG.c_m_axis_mm2s_tdata_width {64} \
    CONFIG.c_mm2s_burst_size {16} \
@@ -357,16 +359,12 @@ proc create_hier_cell_tcp { parentCell nameHier } {
   set datamover_tx [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_datamover:5.1 datamover_tx ]
   set_property -dict [ list \
    CONFIG.c_dummy {1} \
+   CONFIG.c_include_mm2s_dre {true} \
+   CONFIG.c_include_s2mm_dre {true} \
    CONFIG.c_m_axi_mm2s_data_width {64} \
    CONFIG.c_m_axis_mm2s_tdata_width {64} \
    CONFIG.c_mm2s_burst_size {16} \
  ] $datamover_tx
-
-  # Create instance: echo_server_applicat_0, and set properties
-  set echo_server_applicat_0 [ create_bd_cell -type ip -vlnv ethz.systems:hls:echo_server_application:1.2 echo_server_applicat_0 ]
-
-  # Create instance: hash_table_0, and set properties
-  set hash_table_0 [ create_bd_cell -type ip -vlnv ethz.systems.fpga:hls:hash_table:1.0 hash_table_0 ]
 
   # Create instance: listen_port_slice, and set properties
   set listen_port_slice [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_register_slice:1.1 listen_port_slice ]
@@ -386,59 +384,65 @@ proc create_hier_cell_tcp { parentCell nameHier } {
   # Create instance: read_package_slice, and set properties
   set read_package_slice [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_register_slice:1.1 read_package_slice ]
 
-  # Create instance: toe_0, and set properties
-  set toe_0 [ create_bd_cell -type ip -vlnv ethz.systems:hls:toe:1.6 toe_0 ]
+  # Create instance: tcp_echo_server, and set properties
+  set tcp_echo_server [ create_bd_cell -type ip -vlnv ethz.systems:hls:echo_server_application:1.2 tcp_echo_server ]
+
+  # Create instance: tcp_session_hashtable, and set properties
+  set tcp_session_hashtable [ create_bd_cell -type ip -vlnv ethz.systems.fpga:hls:hash_table:1.0 tcp_session_hashtable ]
+
+  # Create instance: tcp_stack, and set properties
+  set tcp_stack [ create_bd_cell -type ip -vlnv ethz.systems:hls:toe:1.6 tcp_stack ]
 
   # Create interface connections
-  connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins s_axis_tcp_data] [get_bd_intf_pins toe_0/s_axis_tcp_data]
-  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins m_axis_tcp_data] [get_bd_intf_pins toe_0/m_axis_tcp_data]
-  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_MM2S] [get_bd_intf_pins datamover_tx/M_AXI_MM2S]
-  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_S2MM] [get_bd_intf_pins datamover_tx/M_AXI_S2MM]
-  connect_bd_intf_net -intf_net Conn5 [get_bd_intf_pins M_AXI_MM2S1] [get_bd_intf_pins datamover_rx/M_AXI_MM2S]
-  connect_bd_intf_net -intf_net Conn6 [get_bd_intf_pins M_AXI_S2MM1] [get_bd_intf_pins datamover_rx/M_AXI_S2MM]
-  connect_bd_intf_net -intf_net axis_rx_data_slice_M_AXIS [get_bd_intf_pins axis_rx_data_slice/M_AXIS] [get_bd_intf_pins echo_server_applicat_0/s_axis_rx_data]
-  connect_bd_intf_net -intf_net axis_rx_metadata_slice_M_AXIS [get_bd_intf_pins axis_rx_metadata_slice/M_AXIS] [get_bd_intf_pins echo_server_applicat_0/s_axis_rx_metadata_V_V]
-  connect_bd_intf_net -intf_net axis_tx_data_slice_M_AXIS [get_bd_intf_pins axis_tx_data_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_tx_data_req]
-  connect_bd_intf_net -intf_net axis_tx_metadata_slice_M_AXIS [get_bd_intf_pins axis_tx_metadata_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_tx_data_req_metadata_V]
-  connect_bd_intf_net -intf_net axis_tx_status_slice_M_AXIS [get_bd_intf_pins axis_tx_status_slice/M_AXIS] [get_bd_intf_pins echo_server_applicat_0/s_axis_tx_status_V]
-  connect_bd_intf_net -intf_net close_connection_slice_M_AXIS [get_bd_intf_pins close_connection_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_close_conn_req_V_V]
-  connect_bd_intf_net -intf_net datamover_rx_M_AXIS_MM2S [get_bd_intf_pins datamover_rx/M_AXIS_MM2S] [get_bd_intf_pins toe_0/s_axis_rxread_data]
-  connect_bd_intf_net -intf_net datamover_rx_M_AXIS_S2MM_STS [get_bd_intf_pins datamover_rx/M_AXIS_S2MM_STS] [get_bd_intf_pins toe_0/s_axis_rxwrite_sts_V]
-  connect_bd_intf_net -intf_net datamover_tx_M_AXIS_MM2S [get_bd_intf_pins datamover_tx/M_AXIS_MM2S] [get_bd_intf_pins toe_0/s_axis_txread_data]
-  connect_bd_intf_net -intf_net datamover_tx_M_AXIS_S2MM_STS [get_bd_intf_pins datamover_tx/M_AXIS_S2MM_STS] [get_bd_intf_pins toe_0/s_axis_txwrite_sts_V]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_close_connection_V_V [get_bd_intf_pins close_connection_slice/S_AXIS] [get_bd_intf_pins echo_server_applicat_0/m_axis_close_connection_V_V]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_listen_port_V_V [get_bd_intf_pins echo_server_applicat_0/m_axis_listen_port_V_V] [get_bd_intf_pins listen_port_slice/S_AXIS]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_open_connection_V [get_bd_intf_pins echo_server_applicat_0/m_axis_open_connection_V] [get_bd_intf_pins open_connection_slice/S_AXIS]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_read_package_V [get_bd_intf_pins echo_server_applicat_0/m_axis_read_package_V] [get_bd_intf_pins read_package_slice/S_AXIS]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_tx_data [get_bd_intf_pins axis_tx_data_slice/S_AXIS] [get_bd_intf_pins echo_server_applicat_0/m_axis_tx_data]
-  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_tx_metadata_V [get_bd_intf_pins axis_tx_metadata_slice/S_AXIS] [get_bd_intf_pins echo_server_applicat_0/m_axis_tx_metadata_V]
-  connect_bd_intf_net -intf_net hash_table_0_m_axis_lup_rsp_V [get_bd_intf_pins hash_table_0/m_axis_lup_rsp_V] [get_bd_intf_pins toe_0/s_axis_session_lup_rsp_V]
-  connect_bd_intf_net -intf_net hash_table_0_m_axis_upd_rsp_V [get_bd_intf_pins hash_table_0/m_axis_upd_rsp_V] [get_bd_intf_pins toe_0/s_axis_session_upd_rsp_V]
-  connect_bd_intf_net -intf_net listen_port_slice_M_AXIS [get_bd_intf_pins listen_port_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_listen_port_req_V_V]
-  connect_bd_intf_net -intf_net listen_port_status_slice_M_AXIS [get_bd_intf_pins echo_server_applicat_0/s_axis_listen_port_status_V] [get_bd_intf_pins listen_port_status_slice/M_AXIS]
-  connect_bd_intf_net -intf_net notification_slice_M_AXIS [get_bd_intf_pins echo_server_applicat_0/s_axis_notifications_V] [get_bd_intf_pins notification_slice/M_AXIS]
-  connect_bd_intf_net -intf_net open_connection_slice_M_AXIS [get_bd_intf_pins open_connection_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_open_conn_req_V]
-  connect_bd_intf_net -intf_net open_status_slice_M_AXIS [get_bd_intf_pins echo_server_applicat_0/s_axis_open_status_V] [get_bd_intf_pins open_status_slice/M_AXIS]
-  connect_bd_intf_net -intf_net read_package_slice_M_AXIS [get_bd_intf_pins read_package_slice/M_AXIS] [get_bd_intf_pins toe_0/s_axis_rx_data_req_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_listen_port_rsp_V [get_bd_intf_pins listen_port_status_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_listen_port_rsp_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_notification_V [get_bd_intf_pins notification_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_notification_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_open_conn_rsp_V [get_bd_intf_pins open_status_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_open_conn_rsp_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_rx_data_rsp [get_bd_intf_pins axis_rx_data_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_rx_data_rsp]
-  connect_bd_intf_net -intf_net toe_0_m_axis_rx_data_rsp_metadata_V_V [get_bd_intf_pins axis_rx_metadata_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_rx_data_rsp_metadata_V_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_rxread_cmd_V [get_bd_intf_pins datamover_rx/S_AXIS_MM2S_CMD] [get_bd_intf_pins toe_0/m_axis_rxread_cmd_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_rxwrite_cmd_V [get_bd_intf_pins datamover_rx/S_AXIS_S2MM_CMD] [get_bd_intf_pins toe_0/m_axis_rxwrite_cmd_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_rxwrite_data [get_bd_intf_pins datamover_rx/S_AXIS_S2MM] [get_bd_intf_pins toe_0/m_axis_rxwrite_data]
-  connect_bd_intf_net -intf_net toe_0_m_axis_session_lup_req_V [get_bd_intf_pins hash_table_0/s_axis_lup_req_V] [get_bd_intf_pins toe_0/m_axis_session_lup_req_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_session_upd_req_V [get_bd_intf_pins hash_table_0/s_axis_upd_req_V] [get_bd_intf_pins toe_0/m_axis_session_upd_req_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_tx_data_rsp_V [get_bd_intf_pins axis_tx_status_slice/S_AXIS] [get_bd_intf_pins toe_0/m_axis_tx_data_rsp_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_txread_cmd_V [get_bd_intf_pins datamover_tx/S_AXIS_MM2S_CMD] [get_bd_intf_pins toe_0/m_axis_txread_cmd_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_txwrite_cmd_V [get_bd_intf_pins datamover_tx/S_AXIS_S2MM_CMD] [get_bd_intf_pins toe_0/m_axis_txwrite_cmd_V]
-  connect_bd_intf_net -intf_net toe_0_m_axis_txwrite_data [get_bd_intf_pins datamover_tx/S_AXIS_S2MM] [get_bd_intf_pins toe_0/m_axis_txwrite_data]
+  connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins s_axis_tcp_data] [get_bd_intf_pins tcp_stack/s_axis_tcp_data]
+  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins m_axis_tcp_data] [get_bd_intf_pins tcp_stack/m_axis_tcp_data]
+  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_DATAMOVER_TX_READ] [get_bd_intf_pins datamover_tx/M_AXI_MM2S]
+  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_DATAMOVER_TX_WRITE] [get_bd_intf_pins datamover_tx/M_AXI_S2MM]
+  connect_bd_intf_net -intf_net Conn5 [get_bd_intf_pins M_AXI_DATAMOVER_RX_READ] [get_bd_intf_pins datamover_rx/M_AXI_MM2S]
+  connect_bd_intf_net -intf_net Conn6 [get_bd_intf_pins M_AXI_DATAMOVER_RX_WRITE] [get_bd_intf_pins datamover_rx/M_AXI_S2MM]
+  connect_bd_intf_net -intf_net axis_rx_data_slice_M_AXIS [get_bd_intf_pins axis_rx_data_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_rx_data]
+  connect_bd_intf_net -intf_net axis_rx_metadata_slice_M_AXIS [get_bd_intf_pins axis_rx_metadata_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_rx_metadata_V_V]
+  connect_bd_intf_net -intf_net axis_tx_data_slice_M_AXIS [get_bd_intf_pins axis_tx_data_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_tx_data_req]
+  connect_bd_intf_net -intf_net axis_tx_metadata_slice_M_AXIS [get_bd_intf_pins axis_tx_metadata_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_tx_data_req_metadata_V]
+  connect_bd_intf_net -intf_net axis_tx_status_slice_M_AXIS [get_bd_intf_pins axis_tx_status_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_tx_status_V]
+  connect_bd_intf_net -intf_net close_connection_slice_M_AXIS [get_bd_intf_pins close_connection_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_close_conn_req_V_V]
+  connect_bd_intf_net -intf_net datamover_rx_M_AXIS_MM2S [get_bd_intf_pins datamover_rx/M_AXIS_MM2S] [get_bd_intf_pins tcp_stack/s_axis_rxread_data]
+  connect_bd_intf_net -intf_net datamover_rx_M_AXIS_S2MM_STS [get_bd_intf_pins datamover_rx/M_AXIS_S2MM_STS] [get_bd_intf_pins tcp_stack/s_axis_rxwrite_sts_V]
+  connect_bd_intf_net -intf_net datamover_tx_M_AXIS_MM2S [get_bd_intf_pins datamover_tx/M_AXIS_MM2S] [get_bd_intf_pins tcp_stack/s_axis_txread_data]
+  connect_bd_intf_net -intf_net datamover_tx_M_AXIS_S2MM_STS [get_bd_intf_pins datamover_tx/M_AXIS_S2MM_STS] [get_bd_intf_pins tcp_stack/s_axis_txwrite_sts_V]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_close_connection_V_V [get_bd_intf_pins close_connection_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_close_connection_V_V]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_listen_port_V_V [get_bd_intf_pins listen_port_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_listen_port_V_V]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_open_connection_V [get_bd_intf_pins open_connection_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_open_connection_V]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_read_package_V [get_bd_intf_pins read_package_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_read_package_V]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_tx_data [get_bd_intf_pins axis_tx_data_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_tx_data]
+  connect_bd_intf_net -intf_net echo_server_applicat_0_m_axis_tx_metadata_V [get_bd_intf_pins axis_tx_metadata_slice/S_AXIS] [get_bd_intf_pins tcp_echo_server/m_axis_tx_metadata_V]
+  connect_bd_intf_net -intf_net hash_table_0_m_axis_lup_rsp_V [get_bd_intf_pins tcp_session_hashtable/m_axis_lup_rsp_V] [get_bd_intf_pins tcp_stack/s_axis_session_lup_rsp_V]
+  connect_bd_intf_net -intf_net hash_table_0_m_axis_upd_rsp_V [get_bd_intf_pins tcp_session_hashtable/m_axis_upd_rsp_V] [get_bd_intf_pins tcp_stack/s_axis_session_upd_rsp_V]
+  connect_bd_intf_net -intf_net listen_port_slice_M_AXIS [get_bd_intf_pins listen_port_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_listen_port_req_V_V]
+  connect_bd_intf_net -intf_net listen_port_status_slice_M_AXIS [get_bd_intf_pins listen_port_status_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_listen_port_status_V]
+  connect_bd_intf_net -intf_net notification_slice_M_AXIS [get_bd_intf_pins notification_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_notifications_V]
+  connect_bd_intf_net -intf_net open_connection_slice_M_AXIS [get_bd_intf_pins open_connection_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_open_conn_req_V]
+  connect_bd_intf_net -intf_net open_status_slice_M_AXIS [get_bd_intf_pins open_status_slice/M_AXIS] [get_bd_intf_pins tcp_echo_server/s_axis_open_status_V]
+  connect_bd_intf_net -intf_net read_package_slice_M_AXIS [get_bd_intf_pins read_package_slice/M_AXIS] [get_bd_intf_pins tcp_stack/s_axis_rx_data_req_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_listen_port_rsp_V [get_bd_intf_pins listen_port_status_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_listen_port_rsp_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_notification_V [get_bd_intf_pins notification_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_notification_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_open_conn_rsp_V [get_bd_intf_pins open_status_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_open_conn_rsp_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_rx_data_rsp [get_bd_intf_pins axis_rx_data_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_rx_data_rsp]
+  connect_bd_intf_net -intf_net toe_0_m_axis_rx_data_rsp_metadata_V_V [get_bd_intf_pins axis_rx_metadata_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_rx_data_rsp_metadata_V_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_rxread_cmd_V [get_bd_intf_pins datamover_rx/S_AXIS_MM2S_CMD] [get_bd_intf_pins tcp_stack/m_axis_rxread_cmd_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_rxwrite_cmd_V [get_bd_intf_pins datamover_rx/S_AXIS_S2MM_CMD] [get_bd_intf_pins tcp_stack/m_axis_rxwrite_cmd_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_rxwrite_data [get_bd_intf_pins datamover_rx/S_AXIS_S2MM] [get_bd_intf_pins tcp_stack/m_axis_rxwrite_data]
+  connect_bd_intf_net -intf_net toe_0_m_axis_session_lup_req_V [get_bd_intf_pins tcp_session_hashtable/s_axis_lup_req_V] [get_bd_intf_pins tcp_stack/m_axis_session_lup_req_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_session_upd_req_V [get_bd_intf_pins tcp_session_hashtable/s_axis_upd_req_V] [get_bd_intf_pins tcp_stack/m_axis_session_upd_req_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_tx_data_rsp_V [get_bd_intf_pins axis_tx_status_slice/S_AXIS] [get_bd_intf_pins tcp_stack/m_axis_tx_data_rsp_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_txread_cmd_V [get_bd_intf_pins datamover_tx/S_AXIS_MM2S_CMD] [get_bd_intf_pins tcp_stack/m_axis_txread_cmd_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_txwrite_cmd_V [get_bd_intf_pins datamover_tx/S_AXIS_S2MM_CMD] [get_bd_intf_pins tcp_stack/m_axis_txwrite_cmd_V]
+  connect_bd_intf_net -intf_net toe_0_m_axis_txwrite_data [get_bd_intf_pins datamover_tx/S_AXIS_S2MM] [get_bd_intf_pins tcp_stack/m_axis_txwrite_data]
 
   # Create port connections
-  connect_bd_net -net Net [get_bd_pins coreclk] [get_bd_pins axis_rx_data_slice/aclk] [get_bd_pins axis_rx_metadata_slice/aclk] [get_bd_pins axis_tx_data_slice/aclk] [get_bd_pins axis_tx_metadata_slice/aclk] [get_bd_pins axis_tx_status_slice/aclk] [get_bd_pins close_connection_slice/aclk] [get_bd_pins datamover_rx/m_axi_mm2s_aclk] [get_bd_pins datamover_rx/m_axi_s2mm_aclk] [get_bd_pins datamover_rx/m_axis_mm2s_cmdsts_aclk] [get_bd_pins datamover_rx/m_axis_s2mm_cmdsts_awclk] [get_bd_pins datamover_tx/m_axi_mm2s_aclk] [get_bd_pins datamover_tx/m_axi_s2mm_aclk] [get_bd_pins datamover_tx/m_axis_mm2s_cmdsts_aclk] [get_bd_pins datamover_tx/m_axis_s2mm_cmdsts_awclk] [get_bd_pins echo_server_applicat_0/ap_clk] [get_bd_pins hash_table_0/ap_clk] [get_bd_pins listen_port_slice/aclk] [get_bd_pins listen_port_status_slice/aclk] [get_bd_pins notification_slice/aclk] [get_bd_pins open_connection_slice/aclk] [get_bd_pins open_status_slice/aclk] [get_bd_pins read_package_slice/aclk] [get_bd_pins toe_0/ap_clk]
-  connect_bd_net -net Net1 [get_bd_pins rx_axis_aresetn] [get_bd_pins axis_rx_data_slice/aresetn] [get_bd_pins axis_rx_metadata_slice/aresetn] [get_bd_pins axis_tx_data_slice/aresetn] [get_bd_pins axis_tx_metadata_slice/aresetn] [get_bd_pins axis_tx_status_slice/aresetn] [get_bd_pins close_connection_slice/aresetn] [get_bd_pins datamover_rx/m_axi_mm2s_aresetn] [get_bd_pins datamover_rx/m_axi_s2mm_aresetn] [get_bd_pins datamover_rx/m_axis_mm2s_cmdsts_aresetn] [get_bd_pins datamover_rx/m_axis_s2mm_cmdsts_aresetn] [get_bd_pins datamover_tx/m_axi_mm2s_aresetn] [get_bd_pins datamover_tx/m_axi_s2mm_aresetn] [get_bd_pins datamover_tx/m_axis_mm2s_cmdsts_aresetn] [get_bd_pins datamover_tx/m_axis_s2mm_cmdsts_aresetn] [get_bd_pins echo_server_applicat_0/ap_rst_n] [get_bd_pins hash_table_0/ap_rst_n] [get_bd_pins listen_port_slice/aresetn] [get_bd_pins listen_port_status_slice/aresetn] [get_bd_pins notification_slice/aresetn] [get_bd_pins open_connection_slice/aresetn] [get_bd_pins open_status_slice/aresetn] [get_bd_pins read_package_slice/aresetn] [get_bd_pins toe_0/ap_rst_n]
-  connect_bd_net -net myIpAddress_V_1 [get_bd_pins myIpAddress_V] [get_bd_pins toe_0/myIpAddress_V]
+  connect_bd_net -net Net [get_bd_pins coreclk] [get_bd_pins axis_rx_data_slice/aclk] [get_bd_pins axis_rx_metadata_slice/aclk] [get_bd_pins axis_tx_data_slice/aclk] [get_bd_pins axis_tx_metadata_slice/aclk] [get_bd_pins axis_tx_status_slice/aclk] [get_bd_pins close_connection_slice/aclk] [get_bd_pins datamover_rx/m_axi_mm2s_aclk] [get_bd_pins datamover_rx/m_axi_s2mm_aclk] [get_bd_pins datamover_rx/m_axis_mm2s_cmdsts_aclk] [get_bd_pins datamover_rx/m_axis_s2mm_cmdsts_awclk] [get_bd_pins datamover_tx/m_axi_mm2s_aclk] [get_bd_pins datamover_tx/m_axi_s2mm_aclk] [get_bd_pins datamover_tx/m_axis_mm2s_cmdsts_aclk] [get_bd_pins datamover_tx/m_axis_s2mm_cmdsts_awclk] [get_bd_pins listen_port_slice/aclk] [get_bd_pins listen_port_status_slice/aclk] [get_bd_pins notification_slice/aclk] [get_bd_pins open_connection_slice/aclk] [get_bd_pins open_status_slice/aclk] [get_bd_pins read_package_slice/aclk] [get_bd_pins tcp_echo_server/ap_clk] [get_bd_pins tcp_session_hashtable/ap_clk] [get_bd_pins tcp_stack/ap_clk]
+  connect_bd_net -net Net1 [get_bd_pins rx_axis_aresetn] [get_bd_pins axis_rx_data_slice/aresetn] [get_bd_pins axis_rx_metadata_slice/aresetn] [get_bd_pins axis_tx_data_slice/aresetn] [get_bd_pins axis_tx_metadata_slice/aresetn] [get_bd_pins axis_tx_status_slice/aresetn] [get_bd_pins close_connection_slice/aresetn] [get_bd_pins datamover_rx/m_axi_mm2s_aresetn] [get_bd_pins datamover_rx/m_axi_s2mm_aresetn] [get_bd_pins datamover_rx/m_axis_mm2s_cmdsts_aresetn] [get_bd_pins datamover_rx/m_axis_s2mm_cmdsts_aresetn] [get_bd_pins datamover_tx/m_axi_mm2s_aresetn] [get_bd_pins datamover_tx/m_axi_s2mm_aresetn] [get_bd_pins datamover_tx/m_axis_mm2s_cmdsts_aresetn] [get_bd_pins datamover_tx/m_axis_s2mm_cmdsts_aresetn] [get_bd_pins listen_port_slice/aresetn] [get_bd_pins listen_port_status_slice/aresetn] [get_bd_pins notification_slice/aresetn] [get_bd_pins open_connection_slice/aresetn] [get_bd_pins open_status_slice/aresetn] [get_bd_pins read_package_slice/aresetn] [get_bd_pins tcp_echo_server/ap_rst_n] [get_bd_pins tcp_session_hashtable/ap_rst_n] [get_bd_pins tcp_stack/ap_rst_n]
+  connect_bd_net -net myIpAddress_V_1 [get_bd_pins myIpAddress_V] [get_bd_pins tcp_stack/myIpAddress_V]
 
   # Restore current instance
   current_bd_instance $oldCurInst
@@ -666,13 +670,13 @@ proc create_hier_cell_fixelplut { parentCell nameHier } {
   current_bd_instance $hier_obj
 
   # Create interface pins
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_WRITE
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_WRITE
 
 
   # Create pins
@@ -721,8 +725,8 @@ proc create_hier_cell_fixelplut { parentCell nameHier } {
   # Create instance: axis_interconnect_1, and set properties
   set axis_interconnect_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_interconnect:2.1 axis_interconnect_1 ]
   set_property -dict [ list \
-   CONFIG.ARB_ON_MAX_XFERS {1} \
-   CONFIG.ARB_ON_TLAST {0} \
+   CONFIG.ARB_ON_MAX_XFERS {0} \
+   CONFIG.ARB_ON_TLAST {1} \
    CONFIG.ENABLE_ADVANCED_OPTIONS {0} \
    CONFIG.HAS_ACLKEN {0} \
    CONFIG.M00_FIFO_MODE {0} \
@@ -839,10 +843,10 @@ proc create_hier_cell_fixelplut { parentCell nameHier } {
   create_hier_cell_tcp $hier_obj tcp
 
   # Create interface connections
-  connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins M_AXI_MM2S] [get_bd_intf_pins tcp/M_AXI_MM2S]
-  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins M_AXI_S2MM] [get_bd_intf_pins tcp/M_AXI_S2MM]
-  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_MM2S1] [get_bd_intf_pins tcp/M_AXI_MM2S1]
-  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_S2MM1] [get_bd_intf_pins tcp/M_AXI_S2MM1]
+  connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins M_AXI_DATAMOVER_TX_READ] [get_bd_intf_pins tcp/M_AXI_DATAMOVER_TX_READ]
+  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins M_AXI_DATAMOVER_TX_WRITE] [get_bd_intf_pins tcp/M_AXI_DATAMOVER_TX_WRITE]
+  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_DATAMOVER_RX_READ] [get_bd_intf_pins tcp/M_AXI_DATAMOVER_RX_READ]
+  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_DATAMOVER_RX_WRITE] [get_bd_intf_pins tcp/M_AXI_DATAMOVER_RX_WRITE]
   connect_bd_intf_net -intf_net S01_AXIS_1 [get_bd_intf_pins axis_interconnect_1/S01_AXIS] [get_bd_intf_pins tcp/m_axis_tcp_data]
   connect_bd_intf_net -intf_net arp_server_subnet_0_m_axis [get_bd_intf_pins arp_server_subnet_0/m_axis] [get_bd_intf_pins axis_interconnect_0/S00_AXIS]
   connect_bd_intf_net -intf_net arp_server_subnet_0_m_axis_arp_lookup_reply_V [get_bd_intf_pins arp_server_subnet_0/m_axis_arp_lookup_reply_V] [get_bd_intf_pins mac_ip_encode_0/s_axis_arp_lookup_reply_V]
@@ -1025,13 +1029,13 @@ proc create_hier_cell_ethernet_10gbe { parentCell nameHier } {
   current_bd_instance $hier_obj
 
   # Create interface pins
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_RX_WRITE
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_READ
 
-  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM1
+  create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_DATAMOVER_TX_WRITE
 
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_DMA_10GBE
 
@@ -1111,10 +1115,10 @@ proc create_hier_cell_ethernet_10gbe { parentCell nameHier } {
 
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins M_DMA_10GBE] [get_bd_intf_pins dma_interconnect/M00_AXI]
-  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins M_AXI_MM2S] [get_bd_intf_pins fixelplut/M_AXI_MM2S]
-  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_S2MM] [get_bd_intf_pins fixelplut/M_AXI_S2MM]
-  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_MM2S1] [get_bd_intf_pins fixelplut/M_AXI_MM2S1]
-  connect_bd_intf_net -intf_net Conn5 [get_bd_intf_pins M_AXI_S2MM1] [get_bd_intf_pins fixelplut/M_AXI_S2MM1]
+  connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins M_AXI_DATAMOVER_TX_READ] [get_bd_intf_pins fixelplut/M_AXI_DATAMOVER_TX_READ]
+  connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins M_AXI_DATAMOVER_TX_WRITE] [get_bd_intf_pins fixelplut/M_AXI_DATAMOVER_TX_WRITE]
+  connect_bd_intf_net -intf_net Conn4 [get_bd_intf_pins M_AXI_DATAMOVER_RX_READ] [get_bd_intf_pins fixelplut/M_AXI_DATAMOVER_RX_READ]
+  connect_bd_intf_net -intf_net Conn5 [get_bd_intf_pins M_AXI_DATAMOVER_RX_WRITE] [get_bd_intf_pins fixelplut/M_AXI_DATAMOVER_RX_WRITE]
   connect_bd_intf_net -intf_net S00_AXI_1 [get_bd_intf_pins dma_interconnect/S00_AXI] [get_bd_intf_pins sfp0/M_AXI_SG]
   connect_bd_intf_net -intf_net S01_AXI_1 [get_bd_intf_pins dma_interconnect/S01_AXI] [get_bd_intf_pins sfp0/M_AXI_MM2S]
   connect_bd_intf_net -intf_net S02_AXI_1 [get_bd_intf_pins dma_interconnect/S02_AXI] [get_bd_intf_pins sfp0/M_AXI_S2MM]
@@ -1769,10 +1773,10 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net S_AXI_VDMA_1 [get_bd_intf_pins hdmi_out/S_AXI_VDMA] [get_bd_intf_pins interconnect_peripherals/M02_AXI]
   connect_bd_intf_net -intf_net ddr_pl_PL_DDR3 [get_bd_intf_ports PL_DDR3] [get_bd_intf_pins ddr_pl/PL_DDR3]
   connect_bd_intf_net -intf_net ethernet_10gbe_M00_AXI [get_bd_intf_pins ethernet_10gbe/M_DMA_10GBE] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
-  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_MM2S [get_bd_intf_pins ethernet_10gbe/M_AXI_MM2S] [get_bd_intf_pins interconnect_ddr_pl/S01_AXI]
-  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_MM2S1 [get_bd_intf_pins ethernet_10gbe/M_AXI_MM2S1] [get_bd_intf_pins interconnect_ddr_pl/S03_AXI]
-  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_S2MM [get_bd_intf_pins ethernet_10gbe/M_AXI_S2MM] [get_bd_intf_pins interconnect_ddr_pl/S02_AXI]
-  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_S2MM1 [get_bd_intf_pins ethernet_10gbe/M_AXI_S2MM1] [get_bd_intf_pins interconnect_ddr_pl/S04_AXI]
+  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_MM2S [get_bd_intf_pins ethernet_10gbe/M_AXI_DATAMOVER_TX_READ] [get_bd_intf_pins interconnect_ddr_pl/S01_AXI]
+  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_MM2S1 [get_bd_intf_pins ethernet_10gbe/M_AXI_DATAMOVER_RX_READ] [get_bd_intf_pins interconnect_ddr_pl/S03_AXI]
+  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_S2MM [get_bd_intf_pins ethernet_10gbe/M_AXI_DATAMOVER_TX_WRITE] [get_bd_intf_pins interconnect_ddr_pl/S02_AXI]
+  connect_bd_intf_net -intf_net ethernet_10gbe_M_AXI_S2MM1 [get_bd_intf_pins ethernet_10gbe/M_AXI_DATAMOVER_RX_WRITE] [get_bd_intf_pins interconnect_ddr_pl/S04_AXI]
   connect_bd_intf_net -intf_net interconnect_ddr_pl_M00_AXI [get_bd_intf_pins ddr_pl/S_AXI_DDR] [get_bd_intf_pins interconnect_ddr_pl/M00_AXI]
   connect_bd_intf_net -intf_net interconnect_peripherals_dma_M00_AXI [get_bd_intf_pins interconnect_ddr_ps/M00_AXI] [get_bd_intf_pins processing_system7_0/S_AXI_HP2]
   connect_bd_intf_net -intf_net processing_system7_0_DDR [get_bd_intf_ports DDR] [get_bd_intf_pins processing_system7_0/DDR]
