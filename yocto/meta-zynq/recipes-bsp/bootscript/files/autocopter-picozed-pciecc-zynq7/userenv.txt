@@ -1,1 +1,1 @@
-overlays=devicetree/stereocam.dtbo devicetree/sensors.dtbo
+overlays=devicetree/stereocam.dtbo devicetree/sensors.dtbo devicetree/ofcam.dtbo

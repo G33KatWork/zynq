@@ -19,7 +19,11 @@ All:
 
 Video test:
 
+    Stereo:
     v4l2-ctl -d /dev/video0 --set-fmt-video=width=1504,height=480,pixelformat=GREY --stream-mmap --stream-count=32 --stream-to=test.raw
+
+    Single:
+    v4l2-ctl -d /dev/video0 --set-fmt-video=width=752,height=480,pixelformat=GREY --stream-mmap --stream-count=32 --stream-to=test.raw
 
 
 Manual uboot build for development:

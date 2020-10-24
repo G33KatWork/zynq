@@ -7,13 +7,13 @@
     fragment@0 {
         target-path = "/";
         __overlay__ {
-            ofcam_clk: ofcam_clock@0 {
+            ofcams_clk: ofcams_clock@0 {
                 compatible = "fixed-clock";
                 #clock-cells = <0>;
                 clock-frequency = <26600000>;
             };
 
-            ofcam_peripherals_clk: ofcam_clock@1 {
+            ofcams_peripherals_clk: ofcams_clock@1 {
                 compatible = "fixed-clock";
                 #clock-cells = <0>;
                 clock-frequency = <100000000>;
@@ -29,48 +29,67 @@
 
             ofcam_iic: i2c@41000000 {
                 compatible = "xlnx,xps-iic-2.00.a";
-                clocks = <&ofcam_peripherals_clk>;
+                clocks = <&ofcams_peripherals_clk>;
                 interrupt-parent = <&intc>;
                 interrupts = < 0 29 4 >;
                 reg = < 0x41000000 0x10000 >;
                 #address-cells = <1>;
                 #size-cells = <0>;
 
-                ofcam_gpio: gpio@41 {
-                    compatible = "nxp,pca9538";
-                    reg = <0x71>;
-                    gpio-controller;
-                    #gpio-cells = <2>;
-                };
+                stereocam_mux: i2c-switch@70 {
+                    compatible = "nxp,pca9540";
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+                    reg = <0x70>;
 
-                mt9v034m: ofcam@48 {
-                    compatible = "aptina,mt9v034m";
-                    reg = <0x48>;
-                    clocks = <&ofcam_clk>;
-
-                    reset-gpios   = < &ofcam_gpio 2 1 /*GPIO_ACTIVE_LOW */ >;
-                    standby-gpios = < &ofcam_gpio 3 0 /*GPIO_ACTIVE_HIGH*/ >;
-
-                    adr0-gpios   = < &ofcam_gpio 0 0 /*GPIO_ACTIVE_HIGH*/ >;
-                    adr1-gpios   = < &ofcam_gpio 1 0 /*GPIO_ACTIVE_HIGH*/ >;
-                    douten-gpios = < &ofcam_gpio 4 0 /*GPIO_ACTIVE_HIGH*/ >;
-
-                    /* Enable LVDS output instead of parallel output (this is a non-mainline patch) */
-                    lvds-mode;
-
-                    /* Enable embedded syncs */
-                    embedded-syncs;
-
-                    ports {
+                    i2c@0 {
                         #address-cells = <1>;
                         #size-cells = <0>;
+                        reg = <0>;
 
-                        port@0 {
-                            reg = <0>;
-                            mt9v034m_out: endpoint {
-                                remote-endpoint = <&ofcam_vcap_in>;
+                        ofcam1_gpio: gpio@71 {
+                            compatible = "nxp,pca9538";
+                            reg = <0x71>;
+                            gpio-controller;
+                            #gpio-cells = <2>;
+                        };
+
+                        mt9v034m: ofcam@48 {
+                            compatible = "aptina,mt9v034m";
+                            reg = <0x48>;
+                            clocks = <&ofcams_clk>;
+
+                            reset-gpios   = < &ofcam1_gpio 2 1 /*GPIO_ACTIVE_LOW */ >;
+                            standby-gpios = < &ofcam1_gpio 3 0 /*GPIO_ACTIVE_HIGH*/ >;
+
+                            adr0-gpios   = < &ofcam1_gpio 0 0 /*GPIO_ACTIVE_HIGH*/ >;
+                            adr1-gpios   = < &ofcam1_gpio 1 0 /*GPIO_ACTIVE_HIGH*/ >;
+                            douten-gpios = < &ofcam1_gpio 4 0 /*GPIO_ACTIVE_HIGH*/ >;
+
+                            /* Enable LVDS output instead of parallel output (this is a non-mainline patch) */
+                            lvds-mode;
+
+                            /* Enable embedded syncs */
+                            embedded-syncs;
+
+                            ports {
+                                #address-cells = <1>;
+                                #size-cells = <0>;
+
+                                port@0 {
+                                    reg = <0>;
+                                    ofcam1_mt9v034m_out: endpoint {
+                                        remote-endpoint = <&ofcam1_vcap_in>;
+                                    };
+                                };
                             };
                         };
+                    };
+
+                    i2c@1 {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        reg = <1>;
                     };
                 };
             };
@@ -92,7 +111,7 @@
                 /* https://forums.xilinx.com/xlnx/board/crawl_message?board.id=ELINUX&message.id=13118 */
                 xlnx,num-fstores = <0x1>;
 
-                clocks = <&ofcam_peripherals_clk>;
+                clocks = <&ofcams_peripherals_clk>;
                 clock-names = "s_axi_lite_aclk";
 
                 dma-channel@41010030 {
@@ -116,8 +135,8 @@
                     port@0 {
                         reg = <0>;
                         direction = "input";
-                        ofcam_vcap_in: endpoint {
-                            remote-endpoint = <&mt9v034m_out>;
+                        ofcam1_vcap_in: endpoint {
+                            remote-endpoint = <&ofcam1_mt9v034m_out>;
                         };
                     };
                 };

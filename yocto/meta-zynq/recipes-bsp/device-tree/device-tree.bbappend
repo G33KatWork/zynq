@@ -15,9 +15,6 @@ DTC_BFLAGS += " -@"
 SRC_URI_append_autocopterall = " \
     file://stereocam.dts \
     file://sensors.dts \
-    "
-
-SRC_URI_append_autocopter-microzed-iocc-zynq7 = " \
     file://ofcam.dts \
     "
 
